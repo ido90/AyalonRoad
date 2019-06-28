@@ -2,7 +2,7 @@
 
 ## Gathering data
 
-The data was gathered when I lived in a tower near a major interval of ***Ayalon Road*** (around *Hashalom* interchange).
+The data was gathered when I lived in a tower near a major interval of ***Ayalon Road*** in Tel-Aviv (around *Hashalom* interchange).
 
 Orignially, it was intended to use a dedicated webcam to take photos of the road for a full month with frequency of ~1s, processing them in realtime, and only saving abstract data (e.g. identifiers and locations of vehicles).
 However, this would require a dedicated webcam, more challenging realtime processing, and a rush development before I left the appartment.
