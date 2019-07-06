@@ -19,6 +19,16 @@ This does not allow to record the road for 24-7, yet permits a reasonable cover 
 | The recording smartphone in action |
 
 
+## Map of applications and requirements
+
+| **Application** | **Detection** | **Tracking** | **Filtering objects** | **All frames** | **Whole frames** |  |
+| ---- | ---- | ---- | ---- | ---- | ---- | ---- |
+| **Density vs. time** | Should be close to 100% (any mis-detections are expected to vary between videos e.g. due to illumination, causing bias in density estimates) | Unnecessary | Must filter any object but vehicle in the chosen roads | Unnecessary (can sample several frames) | Unnecessary (can focus on certain areas) |  |
+| **Speed vs. time** | May be partial (as long as not producing much selection bias to the speed) | Must be able to track cars over significant intervals of road | Must filter any object but vehicle in the chosen roads | Long sequences of frames are necessary for tracking over intervals | Unnecessary (can focus on certain areas) |  |
+|  |  |  |  |  |  |  |
+|  |  |  |  |  |  |  |
+|  |  |  |  |  |  |  |
+
 ## (video processing)
 
 
