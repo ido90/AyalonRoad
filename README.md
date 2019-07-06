@@ -29,6 +29,11 @@ This does not allow to record the road for 24-7, yet permits a reasonable cover 
 |  |  |  |  |  |  |  |
 |  |  |  |  |  |  |  |
 
+#### TODO
+- detection: only look for vehicle classes; remove too large boxes; add small boxes?; generate labeled data and find out how to train more?; use SSD or faster-RCNN instead of YOLO?
+- whole frames: detect (automatically or manually) the edges of the road/zone-of-interest, and either manage to only look at bounding boxes in this zone, or simply set the rest of the image to black.
+- filtering: automatically achieved by only look at part of the frame.
+
 
 #### Tracking
 [Objectdetecttrack](https://github.com/cfotache/pytorch_objectdetecttrack) package uses YOLO for detection and [SORT (Simple Online and Realtime Tracking)](https://github.com/abewley/sort) package for tracking. SORT calculates the IOU (Intersection Over Union) between previously detected objects and objects in current frame, associates objects using [Hungarian-algorithm](https://en.wikipedia.org/wiki/Hungarian_algorithm)-based [linear assignment](https://kite.com/python/docs/sklearn.utils.linear_assignment_.linear_assignment), and requires `IOU>=30%` to confirm the association of each pair.
@@ -42,6 +47,7 @@ Possible improvements:
 - Use some "directional IOU" that takes the motion direction into account. The direction can be either manually defined or deduced from the angle of the vehicle using the bounding-box size ratio.
 - Compare objects size (the cars neither resize nor turn significantly over adjacent frames; on the other hand, different cars also have similar size anyway, so it shouldn't be too helpful).
 - Associate objects using visual look in addition to geometric location (probably too difficult).
+
 
 ## (video processing)
 
