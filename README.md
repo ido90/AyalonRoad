@@ -30,7 +30,7 @@ This does not allow to record the road for 24-7, yet permits a reasonable cover 
 |  |  |  |  |  |  |  |
 
 #### TODO
-- detection: only look for vehicle classes; remove too large boxes; add small boxes?; generate labeled data and find out how to train more?; use SSD or faster-RCNN instead of YOLO?
+- detection: [only look for vehicle classes](https://github.com/pjreddie/darknet/issues/142); remove too large boxes; add small boxes?; generate labeled data and find out how to train more?; use SSD or faster-RCNN instead of YOLO?
 - whole frames: detect (automatically or manually) the edges of the road/zone-of-interest, and either manage to only look at bounding boxes in this zone, or simply set the rest of the image to black.
 - filtering: automatically achieved by only look at part of the frame.
 
