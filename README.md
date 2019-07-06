@@ -31,14 +31,13 @@ This does not allow to record the road for 24-7, yet permits a reasonable cover 
 
 
 #### Tracking
-[Objectdetecttrack](https://github.com/cfotache/pytorch_objectdetecttrack) package uses YOLO for detection and [SORT (Simple Online and Realtime Tracking)](https://github.com/abewley/sort) package for tracking. SORT calculates the IOU (Intersection Over Union) between detected objects in last frame and current frame, associates objects using [Hungarian-algorithm](https://en.wikipedia.org/wiki/Hungarian_algorithm)-based [linear assignment](https://kite.com/python/docs/sklearn.utils.linear_assignment_.linear_assignment), and requires `IOU>=30%` to confirm the association of each pair.
-
-TODO: is frame skip possible? (check if happens anywhere)
+[Objectdetecttrack](https://github.com/cfotache/pytorch_objectdetecttrack) package uses YOLO for detection and [SORT (Simple Online and Realtime Tracking)](https://github.com/abewley/sort) package for tracking. SORT calculates the IOU (Intersection Over Union) between previously detected objects and objects in current frame, associates objects using [Hungarian-algorithm](https://en.wikipedia.org/wiki/Hungarian_algorithm)-based [linear assignment](https://kite.com/python/docs/sklearn.utils.linear_assignment_.linear_assignment), and requires `IOU>=30%` to confirm the association of each pair.
 
 Note that tracking strongly depends on detection: not only undetected object cannot be tracked, but even a single frame of mis-detection may break the tracking.
 
 Possible improvements:
 - Improve detection.
+- Make sure that different cars are not associated to a single object (e.g. look visually, assert monotonous motion direction, etc.).
 - Reduce threshold of IOU (hoping the cars from adjacent lanes would have ~0 intersection).
 - Use some "directional IOU" that takes the motion direction into account. The direction can be either manually defined or deduced from the angle of the vehicle using the bounding-box size ratio.
 - Compare objects size (the cars neither resize nor turn significantly over adjacent frames; on the other hand, different cars also have similar size anyway, so it shouldn't be too helpful).
