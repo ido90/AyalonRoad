@@ -43,9 +43,8 @@ Possible improvements:
 - Improve detection.
 - Make sure that different cars are not associated to a single object (e.g. look visually, assert monotonous motion direction, etc.).
 - Reduce threshold of IOU (hoping the cars from adjacent lanes would have ~0 intersection).
-- Use some "directional IOU" that takes the motion direction into account. The direction can be either manually defined or deduced from the angle of the vehicle using the bounding-box size ratio.
-- Compare objects size (the cars neither resize nor turn significantly over adjacent frames; on the other hand, different cars also have similar size anyway, so it shouldn't be too helpful).
-- Associate objects using visual look in addition to geometric location (probably too difficult).
+- Understand the specific Kalman model and make sure it makes sense (e.g. how the uncertanty of the direction is modeled? is the angle used? looks like they use ratio which doesnt make sense).
+- Associate objects using visual look in addition to geometric location (Deep SORT).
 
 
 ## (video processing)
