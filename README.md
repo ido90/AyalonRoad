@@ -37,8 +37,7 @@ This does not allow to record the road for 24-7, yet permits a reasonable cover 
 
 #### Tracking
 [Objectdetecttrack](https://github.com/cfotache/pytorch_objectdetecttrack) package uses YOLO for detection and [SORT (Simple Online and Realtime Tracking)](https://github.com/abewley/sort) package for tracking. SORT calculates the IOU (Intersection Over Union) between objects in a new frame and objects detected in previous frames (after updating their expected location in the new frame according to constant-speed-based [Kalman filter](https://filterpy.readthedocs.io/en/latest/kalman/KalmanFilter.html)), associates objects using [Hungarian-algorithm](https://en.wikipedia.org/wiki/Hungarian_algorithm)-based [linear assignment](https://kite.com/python/docs/sklearn.utils.linear_assignment_.linear_assignment), and requires `IOU>=30%` to confirm the association of each pair.
-
-Note that tracking strongly depends on detection: not only undetected object cannot be tracked, but even a single frame of mis-detection may break the tracking.
+By default, the two last frames are considered for previous detections (i.e. an object may be mis-detected up to a single frame in a row).
 
 Possible improvements:
 - Improve detection.
