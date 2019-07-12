@@ -41,9 +41,9 @@ By default, the two last frames are considered for previous detections (i.e. an 
 
 Possible improvements:
 - Improve detection.
-- Make sure that different cars are not associated to a single object (e.g. look visually, assert monotonous motion direction, etc.).
+- Make sure that different cars are not associated to a single object (e.g. look visually, assert monotonous motion direction, etc.). - **proved wrong**
 - Reduce threshold of IOU (hoping the cars from adjacent lanes would have ~0 intersection).
-- Understand the specific Kalman model and make sure it makes sense (e.g. how the uncertanty of the direction is modeled? is the angle used? looks like they use ratio which doesnt make sense).
+- Understand the specific Kalman model and make sure it makes sense (e.g. (1) how the uncertanty of the position-direction is modeled? is the angle used? looks like they use ratio which doesnt make sense; **(2) reduce prediction-uncertainty of location in the direction perpendicular to motion (accelaration is more probable than strong turn)**).
 - Associate objects using visual look in addition to geometric location (Deep SORT).
 
 
