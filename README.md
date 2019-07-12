@@ -40,6 +40,7 @@ This does not allow to record the road for 24-7, yet permits a reasonable cover 
 By default, the two last frames are considered for previous detections (i.e. an object may be mis-detected up to a single frame in a row).
 
 Possible improvements:
+- **Edit videos (cut in time and space) through open-cv and show videos in notebook**.
 - Improve detection.
 - Make sure that different cars are not associated to a single object (e.g. look visually, assert monotonous motion direction, etc.). - **proved wrong**
 - Reduce threshold of IOU (hoping the cars from adjacent lanes would have ~0 intersection).
