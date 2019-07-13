@@ -5,3 +5,7 @@ __pycache__
 Notes/
 Data/
 Photographer/Data/
+YOLO/
+objectdetecttrack/config
+objectdetecttrack/images
+objectdetecttrack/tracking_demo_data
