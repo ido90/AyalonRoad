@@ -28,6 +28,7 @@ from sort import *
 cmap = plt.get_cmap('tab20b')
 colors = [cmap(i)[:3] for i in np.linspace(0, 1, 20)]
 
+MAX_AGE = 3
 
 config_path='config/yolov3.cfg'
 weights_path='config/yolov3.weights'
@@ -169,7 +170,7 @@ def set_track_figure(W, H, ax=None):
     ax.grid()
 
 
-def record_frame(source, X, Y, car, area=(0, 650, -350, -50), frm=None,
+def record_frame(source, X, Y, car, area=(0, 650, -350, -50), frm=None, max_age=MAX_AGE,
                  boxes=False, dots=True, all_dots=False, self_track=2,
                  display=True, to_save=None, TITLE=None):
     if type(source) is str:
@@ -182,7 +183,7 @@ def record_frame(source, X, Y, car, area=(0, 650, -350, -50), frm=None,
         frm = ids[0] + frm
 
     n_frames = int(source.get(cv2.CAP_PROP_FRAME_COUNT))
-    mot_tracker = Sort()
+    mot_tracker = Sort(max_age=max_age)
 
     for ii in range(frm - 5):
         ret, frame = source.read()
@@ -251,8 +252,8 @@ def record_frame(source, X, Y, car, area=(0, 650, -350, -50), frm=None,
         cv2.imwrite(str(to_save) + '.png', frame)
 
 
-def record_video(source, X, Y, car, area=(0, 650, -350, -50),
-                 boxes=False, dots=True, all_dots=False, self_track=2,
+def record_video(source, X, Y, car, area=(0, 650, -350, -50), max_age=MAX_AGE,
+                 boxes=False, dots=True, all_dots=False, self_track=2, extra_frames=0,
                  display=True, to_save=None):
     if type(source) is str:
         source = cv2.VideoCapture(source)
@@ -260,7 +261,7 @@ def record_video(source, X, Y, car, area=(0, 650, -350, -50),
     ids = np.where(X[car].notnull())[0]
 
     n_frames = int(source.get(cv2.CAP_PROP_FRAME_COUNT))
-    mot_tracker = Sort()
+    mot_tracker = Sort(max_age=max_age)
 
     for ii in range(ids[0] - 3):
         ret, frame = source.read()
@@ -324,7 +325,7 @@ def record_video(source, X, Y, car, area=(0, 650, -350, -50),
             plt.show()
             clear_output(wait=True)
 
-        if np.all([i < ii for i in ids]):
+        if np.all([i < (ii-extra_frames) for i in ids]):
             break
 
     if to_save:
@@ -335,11 +336,11 @@ def record_video(source, X, Y, car, area=(0, 650, -350, -50),
         out.release()
 
 
-def analyze_video(videopath, area=(0, 650, -350, -50), MAX_FRAMES=np.Inf, DISPLAY=True, TITLE=None):
+def analyze_video(videopath, area=(0, 650, -350, -50), MAX_FRAMES=np.Inf, max_age=MAX_AGE, DISPLAY=True, TITLE=None):
     # initialize Sort object and video capture
     vid = cv2.VideoCapture(videopath)
     n_frames = int(np.min((vid.get(cv2.CAP_PROP_FRAME_COUNT),MAX_FRAMES)))
-    mot_tracker = Sort()
+    mot_tracker = Sort(max_age=max_age)
     X = pd.DataFrame(index=list(range(n_frames)))
     Y = pd.DataFrame(index=list(range(n_frames)))
     S = pd.DataFrame(index=list(range(n_frames)))
@@ -397,7 +398,6 @@ def analyze_video(videopath, area=(0, 650, -350, -50), MAX_FRAMES=np.Inf, DISPLA
             plt.show()
             clear_output(wait=True)
 
-    print(f'Elapsed time:\t{(time.time()-T0)/60:.1f} [min]')
     fig=plt.figure(figsize=(12, 8))
     tit = f"frame {ii+1:d}/{n_frames:d} ({100*(ii+1)/n_frames:.0f}%)"
     tit = TITLE+': '+tit if TITLE else tit
@@ -406,6 +406,9 @@ def analyze_video(videopath, area=(0, 650, -350, -50), MAX_FRAMES=np.Inf, DISPLA
     plt.show()
     clear_output(wait=True)
 
+    print(f'Max permitted sequentially-missing frames in tracking: {max_age:d}')
+    print(f'Elapsed time:\t{(time.time()-T0)/60:.1f} [min]')
+    
     return X, Y, S, C, other_objs, area[1]-area[0], area[3]-area[2]
 
 
@@ -420,7 +423,7 @@ def summarize_video(X,Y,S,C,W,H, FPS=30/8, verbose=True):
     df['continuous_track'] = [np.all(np.diff(np.where(X[car].notnull()))==1) for car in X.columns]
     df['avg_size'] = S.mean() # diameter [pixels]
     df['max_size'] = S.max()
-    df['valid_size'] = df['max_size'] < 4 * df['avg_size'].median()
+    df['valid_size'] = df['max_size'] < 6 * df['avg_size'].median()
     df['neg_x_motion'] = [X.loc[X[car].notnull(),car].diff()[1:].clip(None,0).abs().sum() /\
                           X.loc[X[car].notnull(),car].diff()[1:].abs().sum()
                           if X.loc[X[car].notnull(),car].diff()[1:].abs().sum()>0 else 0
