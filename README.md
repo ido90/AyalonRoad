@@ -24,7 +24,7 @@ This does not allow to record the road for 24-7, yet permits a reasonable cover 
 
 | ![](https://github.com/ido90/AyalonRoad/blob/master/photographer/videos_times.png) |
 | :--: |
-| The cover of hours and weekdays by the recorded videos |
+| The cover of hours and weekdays by the recorded videos (each point represents a single video) |
 
 
 ## Map of applications and requirements
