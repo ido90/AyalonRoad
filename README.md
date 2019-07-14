@@ -4,12 +4,12 @@
 ## Contents
 - [Gathering data](#gathering-data)
 - Videos preprocessing?
-- [Vehicles detection](vehicles-detection)
+- [Vehicles detection](#vehicles-detection)
 - [Paths tracking](#tracking)
-- [Output analysis](output-analysis)
+- [Output analysis](#output-analysis)
 
 
-## Gathering data
+## Gathering Data
 
 The data was gathered when I lived in a tower near a major interval of ***Ayalon Road*** in Tel-Aviv (around *Hashalom* interchange).
 
