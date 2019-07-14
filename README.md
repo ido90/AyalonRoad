@@ -36,32 +36,24 @@ This does not allow to record the road for 24-7, yet permits a reasonable cover 
 ### TODO
 - detection: [only look for vehicle classes](https://github.com/pjreddie/darknet/issues/142); remove too large boxes; add small boxes?; generate labeled data and find out how to train more?; use SSD or faster-RCNN instead of YOLO?
 - whole frames: detect (automatically or manually) the edges of the road/zone-of-interest, and either manage to only look at bounding boxes in this zone, or simply set the rest of the image to black.
-- filtering: automatically achieved by only look at part of the frame.
+- filtering: automatically (mostly) achieved by only look at part of the frame.
 
 
-### Tracking
+### [Tracking](https://github.com/ido90/AyalonRoad/tree/master/Tracker)
 [Objectdetecttrack](https://github.com/cfotache/pytorch_objectdetecttrack) package uses YOLO for detection and [SORT (Simple Online and Realtime Tracking)](https://github.com/abewley/sort) package for tracking. SORT calculates the IOU (Intersection Over Union) between objects in a new frame and objects detected in previous frames (after updating their expected location in the new frame according to constant-speed-based [Kalman filter](https://filterpy.readthedocs.io/en/latest/kalman/KalmanFilter.html)), associates objects using [Hungarian-algorithm](https://en.wikipedia.org/wiki/Hungarian_algorithm)-based [linear assignment](https://kite.com/python/docs/sklearn.utils.linear_assignment_.linear_assignment), and requires `IOU>=30%` to confirm the association of each pair.
 By default, the two last frames are considered for previous detections (i.e. an object may be mis-detected up to a single frame in a row).
 
-Possible improvements:
-- **Edit videos (cut in time and space) through open-cv and show videos in notebook**.
-- Improve detection.
-- Make sure that different cars are not associated to a single object (e.g. look visually, assert monotonous motion direction, etc.). - **proved wrong**
-- Reduce threshold of IOU (hoping the cars from adjacent lanes would have ~0 intersection).
-- Understand the specific Kalman model and make sure it makes sense (e.g. (1) how the uncertanty of the position-direction is modeled? is the angle used? looks like they use ratio which doesnt make sense; **(2) reduce prediction-uncertainty of location in the direction perpendicular to motion (accelaration is more probable than strong turn)**).
-- Associate objects using visual look in addition to geometric location (Deep SORT).
-
 #### [Kalman filter](https://en.wikipedia.org/wiki/Kalman_filter)
 
-What we know is encoded in ```x``` (vehicle location, size and speed in our case), and the uncertainty is ```P```.
+What we know is encoded in `x` (vehicle location, size and speed in our case), and the uncertainty is `P`.
 
 Whenever time goes forward, we have
 ```X(t+1) = F*x(t)```
 ```P(t+1) = F*P(t)*F' + Q```
-Where ```F``` is the model of the process progress and ```Q``` represents additive uncertainty in the progress.
-In our case, roughly, ```x_speed(t+1)=x_speed(t)+noise``` and ```x_location(t+1)=x_location(t)+x_speed(t)+noise```.
+Where `F` is the model of the process progress and `Q` represents additive uncertainty in the progress.
+In our case, roughly, `x_speed(t+1)=x_speed(t)+noise` and `x_location(t+1)=x_location(t)+x_speed(t)+noise`.
 
-Whenever a new observation is assigned, the new information is incorporated into ```x``` with weight corresponding to ```P``` and to the observation's own uncertainty ```R``` (assumed to be a few pixels in our case).
+Whenever a new observation is assigned, the new information is incorporated into `x` with weight corresponding to `P` and to the observation's own uncertainty `R` (assumed to be a few pixels in our case).
 
 #### Assignment confusion
 
@@ -74,7 +66,7 @@ Assignment confusion occurs when one vehicle is detected in certain frames, and 
 - The best way to prevent it is probably improving detection of small and adjacent objects.
 
 - An alternative is to constraint the motion in perpendicular to the road.
-It could be done by wrapping the Kalman filter so that ```Q``` would express different uncertainty for the direction of motion and for the perpendicular direction in every time step (note that's an external patch since in classic Kalman filter the process uncertainty ```Q``` does not depend on the state ```x```); and changing SORT assignment method to consider the Kalman uncertainty ```P``` in addition to the state itself ```x```.
+It could be done by wrapping the Kalman filter so that `Q` would express different uncertainty for the direction of motion and for the perpendicular direction in every time step (note that's an external patch since in classic Kalman filter the process uncertainty `Q` does not depend on the state `x`); and changing SORT assignment method to consider the Kalman uncertainty `P` in addition to the state itself `x`.
 However, this approach is quite wrong because it cannot recognize actual perpendicular motion, e.g. turns or line transitions.
 
 - Another alternative is to consider visual similarity for the sake of assignment (as in Deep SORT), which was not tried in this project.
