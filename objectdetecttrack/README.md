@@ -23,7 +23,12 @@ The following phenomena were studied in the tracking data of the video `20190612
 | **Incontinuous track -> missing frames in paths** | 33% of tracks | Few frames are missing due to mis-detections; others are missing because [SORT](https://github.com/abewley/sort) requires several detections in a row before it renews the tracking | Editing SORT code to renew tracking immediately minimized the loss of information due to frames with missing detection. |
 | **Very large car size** | 3% of tracks | Fake detection: a whole section of road is classified as "car" | Filtering out vehicles larger than 6 times the median removed the fake detections of this kind. |
 | **Motion against road direction** | 4% of tracks | Either fake detections (see "very large car size" above) or short path with nearly-standing motion | Filtering out large cars and short paths solved most of the problem. |
-| **Large motion in perpendicular to road** | 2% of tracks | Tracking-confusions (different vehicles are associated with the same object-ID) - and NOT actual line-transitions of cars | The noise model of Kalman filter (```Q```) could be generalized to express smaller uncertainty in the direction perpendicular to the motion; however, since the phenomenon is quite rare, and since improvement of detection is planned anyway, this is out of the scope of the project. Note that by simply filtering these events out, we would give up on detection of line-transitions. |
+| **Large motion in perpendicular to road** | 2% of tracks | Tracking assignment-confusions (different vehicles are associated with the same object-ID) - and NOT actual line-transitions of cars | The noise model of Kalman filter (```Q```) could be generalized to express smaller uncertainty in the direction perpendicular to the motion; however, since the phenomenon is quite rare, and since improvement of detection is planned anyway, this is out of the scope of the project. Note that by simply filtering these events out, we would give up on detection of line-transitions. |
+
+| ![](https://github.com/ido90/AyalonRoad/blob/master/Output/Tracking%20issues/assignment%20confusion%20before.png) ![](https://github.com/ido90/AyalonRoad/blob/master/Output/Tracking%20issues/assignment%20confusion%20after.png) |
+| :--: |
+| Tracking of a path (black points) before and after assignment confusion. This is detectable in the post-analysis as large motion in perpendicular to the road. |
+
 
 ### Speed analysis
 
