@@ -1,8 +1,12 @@
 # Analysis of Original Video Data of Ayalon Road
 
 
+## Contents
 - [Gathering data](#gathering-data)
-- 
+- Vehicles detection
+- [Paths tracking](#tracking)
+- Output analysis
+
 
 ## Gathering data
 
@@ -42,8 +46,9 @@ This does not allow to record the road for 24-7, yet permits a reasonable cover 
 - whole frames: detect (automatically or manually) the edges of the road/zone-of-interest, and either manage to only look at bounding boxes in this zone, or simply set the rest of the image to black.
 - filtering: automatically (mostly) achieved by only look at part of the frame.
 
+## Vehicles Detection
 
-### [Tracking](https://github.com/ido90/AyalonRoad/tree/master/Tracker)
+## [Tracking](https://github.com/ido90/AyalonRoad/tree/master/Tracker)
 [Objectdetecttrack](https://github.com/cfotache/pytorch_objectdetecttrack) package uses YOLO for detection and [SORT (Simple Online and Realtime Tracking)](https://github.com/abewley/sort) package for tracking. SORT calculates the IOU (Intersection Over Union) between objects in a new frame and objects detected in previous frames (after updating their expected location in the new frame according to constant-speed-based [Kalman filter](https://filterpy.readthedocs.io/en/latest/kalman/KalmanFilter.html)), associates objects using [Hungarian-algorithm](https://en.wikipedia.org/wiki/Hungarian_algorithm)-based [linear assignment](https://kite.com/python/docs/sklearn.utils.linear_assignment_.linear_assignment), and requires `IOU>=30%` to confirm the association of each pair.
 By default, the two last frames are considered for previous detections (i.e. an object may be mis-detected up to a single frame in a row).
 
@@ -77,7 +82,4 @@ However, this approach is quite wrong because it cannot recognize actual perpend
 Note that it could deal with many confusions, but many others (as in the example above) were between very similar vehicles (at least in the video resolution) and probably couldn't be prevented by this approach.
 
 
-## (video processing)
-
-
-## (analysis)
+## Output Analysis
