@@ -9,7 +9,7 @@
 - [Output analysis](#output-analysis)
 
 
-## Gathering Data
+## [Gathering Data](https://github.com/ido90/AyalonRoad/blob/master/photographer/VideosTimes.ipynb)
 
 The data was gathered when I lived in a tower near a major interval of ***Ayalon Road*** in Tel-Aviv (around *Hashalom* interchange).
 
@@ -62,7 +62,7 @@ By default, the two last frames are considered for previous detections (i.e. an 
 
 TODO
 
-#### [Kalman filter](https://en.wikipedia.org/wiki/Kalman_filter)
+#### Kalman filter ([Wiki](https://en.wikipedia.org/wiki/Kalman_filter))
 
 What we know is encoded in `x` (vehicle location, size and speed in our case), and the uncertainty is `P`.
 
