@@ -10,7 +10,7 @@ By default, the two last frames are considered for previous detections (i.e. an 
 
 ## Tracking demonstration with a single video
 
-Based on [this](https://github.com/ido90/AyalonRoad/blob/master/objectdetecttrack/track_demo.ipynb) notebook.
+Based on [this](https://github.com/ido90/AyalonRoad/blob/master/Tracker/track_demo.ipynb) notebook.
 
 ### Anomalous trackings
 
