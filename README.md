@@ -67,8 +67,7 @@ Whenever a new observation is assigned, the new information is incorporated into
 
 Assignment confusion occurs when one vehicle is detected in certain frames, and an adjacent vehicle in other frames.
 
-| ![](https://github.com/ido90/AyalonRoad/blob/master/Output/Tracking%20issues/assignment%20confusion%20before.png)
-  ![](https://github.com/ido90/AyalonRoad/blob/master/Output/Tracking%20issues/assignment%20confusion%20after.png) |
+| ![](https://github.com/ido90/AyalonRoad/blob/master/Output/Tracking%20issues/assignment%20confusion%20before.png) ![](https://github.com/ido90/AyalonRoad/blob/master/Output/Tracking%20issues/assignment%20confusion%20after.png) |
 | :--: |
 | Tracking of a path (black points) before and after assignment confusion |
 
