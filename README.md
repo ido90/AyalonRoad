@@ -49,8 +49,25 @@ See [**more detailed description**](https://github.com/ido90/AyalonRoad/blob/mas
 - whole frames: detect (automatically or manually) the edges of the road/zone-of-interest, and either manage to only look at bounding boxes in this zone, or simply set the rest of the image to black.
 - filtering: automatically (mostly) achieved by only look at part of the frame.
 
+
 ## Vehicles Detection
 
+#### Using pre-trained networks for object-detection - FAILED
+Several models (including SSD and YOLO) pre-trained on various datasets (including COCO and VOC, both containing several classes of vehicles) were used out-of-the-box to detect vehicles in the frames of the videos.
+
+Unfortunately, most of the pre-trained models did not prove useful for this project's data, with its extremely-small often-overlapping vehicles and some noise of glass-window reflections.
+The best results were achieved by YOLOv3 applied on zoomed frames, which was still far from good.
+
+| ![](https://github.com/ido90/AyalonRoad/blob/master/tracker/tracking_demo_data/poor_detection_rate.png) |
+| :--: |
+| A sample frame with poor vehicles detection rate of pre-trained YOLO model |
+
+#### Using motion-detection for object-detection - NOT TRIED
+The videos are mostly static and the vehicles are small and moving most of the time, hence a motion-detection algorithm based on difference between frames seems like a promising method for detection of vehicles.
+
+This direction was not researched due to the choice to focus on CNN-based detection and classification.
+
+#### TODO what did I do?
 
 
 ## [Tracking](https://github.com/ido90/AyalonRoad/tree/master/Tracker)
