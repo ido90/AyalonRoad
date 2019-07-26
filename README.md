@@ -52,7 +52,7 @@ See [**more detailed description**](https://github.com/ido90/AyalonRoad/blob/mas
 
 ## Vehicles Detection
 
-#### Using pre-trained networks for object-detection - FAILED
+#### Pre-trained networks for object-detection - FAILED
 Several models (including SSD and YOLO) pre-trained on various datasets (including COCO and VOC, both containing several classes of vehicles) were used out-of-the-box to detect vehicles in the frames of the videos.
 
 Unfortunately, most of the pre-trained models did not prove useful for this project's data, with its extremely-small often-overlapping vehicles and some noise of glass-window reflections.
@@ -62,7 +62,7 @@ The best results were achieved by YOLOv3 applied on zoomed frames, which was sti
 | :--: |
 | A sample frame with poor vehicles-detection-rate by a pre-trained YOLO model |
 
-#### Using motion-detection for object-detection - NOT TRIED
+#### Motion-detection for object-detection - NOT TRIED
 The videos are mostly static and the vehicles are small and moving most of the time, hence a motion-detection algorithm based on difference between frames seems like a promising method for detection of vehicles.
 
 This direction was not researched due to the choice to focus on CNN-based detection and classification.
