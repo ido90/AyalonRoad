@@ -10,7 +10,7 @@
 - [Output analysis](#output-analysis)
 
 
-## [Gathering Data](https://github.com/ido90/AyalonRoad/blob/master/photographer/VideosTimes.ipynb)
+## [Gathering Data](https://github.com/ido90/AyalonRoad/blob/master/photographer)
 
 The data was gathered when I lived in a tower near a major interval of ***Ayalon Road*** in Tel-Aviv (around *Hashalom* interchange), using **Galaxy S8+ Hyperlapse mode with x8 speed, FHD resolution and standard configuration elsewise**.
 A simple magnet-based stand was kindly provided and located on the appartment's glass-wall by the colleage and friend Oded Shimon.
