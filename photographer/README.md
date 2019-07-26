@@ -16,7 +16,7 @@ This does not allow to record the road for 24-7, yet permits a reasonable cover 
 **[This](https://github.com/ido90/AyalonRoad/blob/master/photographer/VideosTimes.ipynb) notebook** summarizes the cover of dates and times by **80 recorded videos (~14 hours and 13 GB in total)** over a month and a half.
 
 #### Samples
-| ![](https://github.com/ido90/AyalonRoad/blob/master/Output/Data%20samples/day_crowded_nimor_reflections.png) ![](https://github.com/ido90/AyalonRoad/blob/master/Output/Data%20samples/day_crowded_nimor_reflections_zoomin.png) |
+| ![](https://github.com/ido90/AyalonRoad/blob/master/Output/Data%20samples/day_crowded_minor_reflections.png) ![](https://github.com/ido90/AyalonRoad/blob/master/Output/Data%20samples/day_crowded_minor_reflections_zoomin.png) |
 | :--: |
 | A sample frame of a video in both original size and zoom-in; note the slight reflections from the glass-window visible in the zoomed images |
 
