@@ -56,7 +56,8 @@ See [**more detailed description**](https://github.com/ido90/AyalonRoad/blob/mas
 Several models (including SSD and YOLO) pre-trained on various datasets (including COCO and VOC, both containing several classes of vehicles) were used out-of-the-box to detect vehicles in the frames of the videos.
 
 Unfortunately, most of the pre-trained models did not prove useful for this project's data, with its extremely-small often-overlapping vehicles and some noise of glass-window reflections.
-The best results were achieved by YOLOv3 applied on zoomed frames, which was still far from good.
+The best results were achieved by YOLOv3, which still yielded poor detection-rate - even on zoomed-in frames of clean, well-illuminated videos.
+SSD models are reported to have better detection rate for small objects, yet they did not do any better than YOLO.
 
 | ![](https://github.com/ido90/AyalonRoad/blob/master/Output/Detection%20issues/poor_detection_rate.png) |
 | :--: |
