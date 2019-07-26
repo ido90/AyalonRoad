@@ -58,7 +58,7 @@ Several models (including SSD and YOLO) pre-trained on various datasets (includi
 Unfortunately, most of the pre-trained models did not prove useful for this project's data, with its extremely-small often-overlapping vehicles and some noise of glass-window reflections.
 The best results were achieved by YOLOv3 applied on zoomed frames, which was still far from good.
 
-| ![](https://github.com/ido90/AyalonRoad/blob/master/output/detection%20issues/poor_detection_rate.png) |
+| ![](https://github.com/ido90/AyalonRoad/blob/master/Output/Detection%20issues/poor_detection_rate.png) |
 | :--: |
 | A sample frame with poor vehicles-detection-rate by a pre-trained YOLO model |
 
