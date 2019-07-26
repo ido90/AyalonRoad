@@ -60,7 +60,7 @@ The best results were achieved by YOLOv3 applied on zoomed frames, which was sti
 
 | ![](https://github.com/ido90/AyalonRoad/blob/master/tracker/tracking_demo_data/poor_detection_rate.png) |
 | :--: |
-| A sample frame with poor vehicles detection rate of pre-trained YOLO model |
+| A sample frame with poor vehicles-detection-rate by a pre-trained YOLO model |
 
 #### Using motion-detection for object-detection - NOT TRIED
 The videos are mostly static and the vehicles are small and moving most of the time, hence a motion-detection algorithm based on difference between frames seems like a promising method for detection of vehicles.
