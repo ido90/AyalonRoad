@@ -17,7 +17,7 @@ A simple magnet-based stand was kindly provided and located on the appartment's 
 It turns out that an 8-minutes video taken this way (compressed into 1 minute) requires ~120MB of storage.
 This does not allow to record the road for 24-7, yet permits a reasonable cover of the road in various dates and hours.
 
-**80 videos were recorded (~14 hours and 13 GB in total)** over a month and a half.
+**82 videos were recorded (~14 hours and 13 GB in total)** over a month and a half.
 
 See [**more detailed description**](https://github.com/ido90/AyalonRoad/blob/master/photographer) and a [**summary of the cover of dates and times**](https://github.com/ido90/AyalonRoad/blob/master/photographer/VideosTimes.ipynb) by the videos.
 
