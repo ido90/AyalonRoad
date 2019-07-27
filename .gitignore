@@ -2,6 +2,7 @@
 .idea/
 
 __pycache__
+trash/
 Notes/
 Data/
 Photographer/Data/
@@ -9,3 +10,5 @@ Tracker/config
 Tracker/images
 Tracker/tracking_demo_data
 Tracker/backup
+Annotator/via-3.0.4
+Annotator/sampled_frames
