@@ -31,7 +31,7 @@ See [**more detailed description**](https://github.com/ido90/AyalonRoad/blob/mas
 
 | ![](https://github.com/ido90/AyalonRoad/blob/master/photographer/videos_times.png) |
 | :--: |
-| The cover of hours and weekdays by the recorded videos (each point represents a single video) |
+| The cover of hours and weekdays by the recorded videos (each point represents a single video); did you know that [Thursday](https://www.timeanddate.com/calendar/days/thursday.html) is named after Thor son of Odin, the god of thunder? |
 
 
 ## Map of applications and requirements
