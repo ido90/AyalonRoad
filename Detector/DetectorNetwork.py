@@ -24,6 +24,8 @@ from torch.autograd import Variable
 import torchvision as tv
 from torch import optim
 
+DEVICE = t.device("cuda:0" if t.cuda.is_available() else "cpu")
+
 
 ################# MAIN #################
 
@@ -37,6 +39,7 @@ def experiment_instance(
         loc_channels1 = 4,
         loc_channels2 = 4,
         loc_tansig = 1,
+        dropout = 0,
         i_train = list(range(10)),
         i_valid = list(range(10,12)),
         epochs = 64,
@@ -71,7 +74,7 @@ def experiment_instance(
     # Feature map
     conv = get_resnet_conv_model()
     set_grad(conv, 0, verbose=verbose>=2)
-    inputs, labels, locations = to_device(conv, inputs, labels, locations, verbose=verbose>=2)
+    conv.to(DEVICE)
     features = []
     for file, X in zip(files, inputs):
         ft, map_h, map_w, feature_size = get_features(X, conv, W, verbose=(verbose>=2 and file==files[0]))
@@ -85,14 +88,16 @@ def experiment_instance(
     # RPN
     loc_fac = LocationFactory(anchors, H, W)
     head = RPN(features=features[0], out_channels=mid_channels, loc_features=location_features,
-               n_anchors=anchors_per_location, n_mid_layers=conv_mid_layers,
+               n_anchors=anchors_per_location, n_mid_layers=conv_mid_layers, dropout=dropout,
                loc_tansig=loc_tansig, loc_channels1=loc_channels1, loc_channels2=loc_channels2,
                verbose=verbose>=2)
     if verbose >= 1:
         print(f'Total params:\t{np.sum([t.numel(p) for p in head.parameters()]):.0f}')
     head.initialize_params()
     set_grad(head, 1, verbose=verbose>=2)
-    features, labels, locations = to_device(head, features, labels, locations, verbose=verbose>=3)
+    tmp = to_device(head, [*features, labels, locations])
+    features, labels, locations = tmp[:-2], tmp[-2], tmp[-1]
+    del tmp
 
     # Training
     if load_model:
@@ -102,10 +107,10 @@ def experiment_instance(
     else:
         head_optimizer = optim.Adam(head.parameters())
         losses = \
-            train_model_head(head, head_optimizer, images, features, labels, locations, loc_fac, anchors=None,
-                             epochs=epochs, lr=learning_rate, bs=batch_size,
-                             lab2loc_loss_ratio=overweights[0], object_overweight=overweights[1],
-                             i_train=i_train, i_valid=i_valid, verbose=verbose-1, plot_freq=train_plot_freq)
+            train_model(head, head_optimizer, images, features, labels, locations, loc_fac, anchors=None,
+                        epochs=epochs, lr=learning_rate, bs=batch_size,
+                        lab2loc_loss_ratio=overweights[0], object_overweight=overweights[1],
+                        i_train=i_train, i_valid=i_valid, verbose=verbose-1, plot_freq=train_plot_freq)
 
     # Summary
     ret = summarize_experiment(exp_name, head, images, features, labels, locations,
@@ -118,16 +123,15 @@ def experiment_instance(
         t.save(head.state_dict(), models_path/save_model)
 
     if cleanup:
-        del conv, head, inputs, features, labels, locations
-        gc.collect()
-        t.cuda.empty_cache()
+        del conv, head
+        clean_device([inputs, features, labels, locations])
 
     return ret
 
 
 ################# DATA #################
 
-def get_training_labels(labs_path='labels/anchor_labels.pkl', keep_ids=None, verbose=True):
+def get_training_labels(labs_path='labels/anchor_labels_9.pkl', keep_ids=None, verbose=True):
     labels_data = pkl.load(open(labs_path, 'rb'))
     labels, locations, anchors = \
         labels_data['anchor_labels'], labels_data['anchor_target_locations'], labels_data['anchor_boxes_locations']
@@ -137,6 +141,17 @@ def get_training_labels(labs_path='labels/anchor_labels.pkl', keep_ids=None, ver
     if verbose:
         print(labels.shape, locations.shape, anchors.shape)
     return labels, locations, anchors
+
+def get_anchors_location_map(anchors, anchors_per_loc=3*3, map_h=135, map_w=240):
+    anchors_locs_ids = np.where(np.arange(len(anchors)) % anchors_per_loc == 0)[0]
+    y0 = t.from_numpy(0.5 * (anchors[anchors_locs_ids, 0] + anchors[anchors_locs_ids, 2]))
+    x0 = t.from_numpy(0.5 * (anchors[anchors_locs_ids, 1] + anchors[anchors_locs_ids, 3]))
+    y0 = y0.view(1, 1, map_h, map_w).float()
+    x0 = x0.view(1, 1, map_h, map_w).float()
+    y0 = y0 / y0.max()
+    x0 = x0 / x0.max()
+    anchor_locs = t.cat((Variable(y0), Variable(x0)), 1)
+    return anchor_locs
 
 def get_training_images(ims_path=Path(r'../annotator/sampled_frames'), filter_list=tuple(), verbose=True):
     files = [(i,f) for i,f in enumerate(os.listdir(ims_path)) if f.endswith('.png') and f not in filter_list]
@@ -164,12 +179,13 @@ def normalize_images(images, imagenet_mean=(0.485,0.456,0.406), imagenet_std=(0.
 
 class RPN(nn.Module):
     def __init__(self, n_mid_layers=1, in_channels=None, mid_channels=None, out_channels=None, features=None,
-                 n_anchors=3*3,
+                 n_anchors=3*3, dropout=0,
                  loc_features=False, loc_tansig=1, loc_channels1=4, loc_channels2=4,
                  verbose=True):
 
         super().__init__()
 
+        self.dropout = dropout
         self.loc_features = loc_features
         self.tansig = loc_tansig
 
@@ -187,6 +203,7 @@ class RPN(nn.Module):
         # standard convolution(s) on top of the input feature-map
         self.conv1 = nn.Conv2d(in_channels, mid_channels, 3, 1, 1) if n_mid_layers > 1 else None
         self.conv2 = nn.Conv2d(mid_channels, out_channels, 3, 1, 1)
+        self.drop_layer = nn.Dropout2d(self.dropout) if self.dropout else None
 
         # a small network using the location (x,y) of an anchor-box within image
         self.loc_layer1 = nn.Conv2d(2, loc_channels1, 1, 1, 0) if self.loc_features else None
@@ -209,6 +226,7 @@ class RPN(nn.Module):
         mid = self.conv1(X) if self.conv1 is not None else X
         out = self.conv2(mid)
         out = self.relu(out)
+        if self.dropout: out = self.drop_layer(out)
 
         # regression
         reg = self.reg_layer(out)
@@ -221,8 +239,8 @@ class RPN(nn.Module):
             locs = t.tanh(locs) if self.tansig >= 2 else self.relu(locs)
 
         # classification
-        x_cls = t.cat((out,locs),1) if self.loc_features else out
-        cls = t.sigmoid(self.cls_layer(x_cls))
+        to_cls = t.cat((out,locs),1) if self.loc_features else out
+        cls = t.sigmoid(self.cls_layer(to_cls))
 
         if verbose:
             print('For a single image - shapes of features, mid-layers, locations and scores:',
@@ -270,8 +288,9 @@ def ims2vars(images, normalize=True, verbose=1):
     return inputs
 
 def get_features(X, model, W, verbose=True):
+    X = to_device(model, [X])[0]
     with t.no_grad():
-        features = model(X)
+        features = model.eval()(X)
     map_h,map_w = features.shape[-2:]
     feature_size = W // map_w
     if verbose:
@@ -342,6 +361,7 @@ class LocationFactory:
         # stack coordinates together
         return np.vstack((y1, x1, y2, x2)).transpose()
 
+    # TODO remove if unneeded
     def rel2abs_multi(self, locs):
         # rel -> abs
         obj_y0 = self.base_y0[:,np.newaxis] + self.base_h[:,np.newaxis] * locs[:,0,:]
@@ -377,7 +397,6 @@ def RPN_loss(labs, locs, ref_labs, ref_locs, lab_overweight=5, object_overweight
     # set masks according to anchors containing objects
     object_mask = ref_labs == 1
     background_mask = ref_labs == 0
-    # object_overweight *= object_mask.float().sum() / background_mask.float().sum() # TODO REMOVE
     if verbose:
         print('All / backgrounds / objects:', object_mask.shape, background_mask.sum(), object_mask.sum())
     
@@ -464,21 +483,21 @@ def regions_of_interest(scores, locs,
 
 ################# TRAINING #################
 
-def to_device(model, input_list, labels, locations, verbose=True):
-    
-    device = t.device("cuda:0" if t.cuda.is_available() else "cpu")
-    if verbose:
-        print(device)
+def to_device(model, tensor_list):
+    if model is not None:
+        model.to(DEVICE)
+    for i,tns in enumerate(tensor_list):
+        if tns is not None:
+            if type(tns) is not t.Tensor:
+                tns = t.from_numpy(tns)
+            tensor_list[i] = tns.to(DEVICE)
+    return tensor_list
 
-    model.to(device)
-    input_list = [f.to(device) for f in input_list]
-    
-    labels = labels if type(labels) is t.Tensor else t.from_numpy(labels)
-    locations = locations if type(locations) is t.Tensor else t.from_numpy(locations)
-    labels = labels.to(device)
-    locations = locations.to(device)
-    
-    return input_list, labels, locations
+def clean_device(tensor_list):
+    for i in reversed(list(range(len(tensor_list)))):
+        del tensor_list[i]
+    gc.collect()
+    t.cuda.empty_cache()
 
 def batch_sample(bs, labs, weights=None):
     if bs is None:
@@ -497,108 +516,46 @@ def batch_sample(bs, labs, weights=None):
 
     return np.concatenate((i_objs, i_bkgs))
 
-def validation_step(model, labels, locations, features, i_valid,
+def validation_step(model, labels, locations, inputs, i_valid,
                     valid_bkg_losses, valid_obj_losses, valid_loc_losses,
+                    loc_input = None,
                     lab2loc_loss_ratio=5, object_overweight=1,
                     do_plot=False, images=None, anchors=None, loc_fac=None, ax=None, title='', verbose=0):
     
-    running_loss = [0,0,0]
+    running_loss = [0,0,0] # bg, obj, loc
     for ii,i in enumerate(i_valid):
+        # move to GPU
+        X, tmp_labs, tmp_locs = to_device(None, [inputs[i], labels[:,i], locations[:,:,i]])
+        # predict
         with t.no_grad():
-            scores, locs = model(features[i])
-            loss = RPN_loss(scores, locs, labels[:,i], locations[:,:,i],
+            if loc_input is None:
+                scores, locs = model.eval()(X)
+            else:
+                scores, locs = model.eval()(X, loc_input)
+            loss = RPN_loss(scores, locs, tmp_labs, tmp_locs,
                             lab_overweight=lab2loc_loss_ratio, object_overweight=object_overweight, verbose=verbose>=3)
+        # update results
         running_loss[0] += loss[0].item()
         running_loss[1] += loss[1].item()
         running_loss[2] += loss[2].item()
+        # clean GPU
+        clean_device([X, loss, tmp_labs, tmp_locs])
+        # plot
         if do_plot and ii==0:
             show_preds(scores, locs, loc_fac, anchors, images[i], ax=ax,
                        title=title)
-            
+
+    # save total validation loss
     valid_bkg_losses.append(running_loss[0]/len(i_valid))
     valid_obj_losses.append(running_loss[1]/len(i_valid))
     valid_loc_losses.append(running_loss[2]/len(i_valid))
 
-def train_model_head(model, optimizer,
-                     images, features, labels, locations, loc_fac, anchors=None,
-                     epochs=10, lr=0.003, bs=None, lab2loc_loss_ratio=5, object_overweight=1,
-                     i_train=None, i_valid=0.2,
-                     verbose=0, plot_freq=10):
-
-    # Train & validation sets
-    if i_train is None:
-        if type(i_valid) in (int,float):
-            n_valid = int(len(features)*i_valid)
-            i_valid = sorted(np.random.choice(np.arange(len(features)), n_valid))
-        i_train = [i for i in np.arange(len(features)) if i not in i_valid]
-    elif type(i_valid) in (int,float):
-        i_valid = [i for i in np.arange(len(features)) if i not in i_train]
-    if verbose >= 1:
-        print(f'Train/valid images:\t{len(i_train):d} / {len(i_valid):d}')
-
-    # Set lr
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
-
-    # Initialization
-    if plot_freq:
-        nrows = ceil(len(i_train)*epochs/plot_freq) + 1
-        _, axs = plt.subplots(nrows,2, figsize=(18,6*nrows))
-    train_bkg_losses = []
-    train_obj_losses = []
-    train_loc_losses = []
-    valid_bkg_losses = []
-    valid_obj_losses = []
-    valid_loc_losses = []
-
-    # Train loop
-    scores = {i: t.ones_like(labels[:,0]) for i in i_train}
-    iter_count = 0
-    for e in tnrange(epochs):
-
-        # running_loss = [0,0,0]
-        for ii,i in enumerate(i_train):
-
-            # train
-            ids = batch_sample(bs, labels[:,i], labs_wrap(scores[i]))
-            optimizer.zero_grad()
-            scores[i], locs = model(features[i])
-            loss = RPN_loss(labs_wrap(scores[i])[ids], locs_wrap(locs)[ids,:], labels[ids,i], locations[ids,:,i],
-                            lab_overweight=lab2loc_loss_ratio, object_overweight=object_overweight, verbose=verbose>=2)
-            (loss[0]+loss[1]+loss[2]).backward()
-            optimizer.step()
-            train_bkg_losses.append(loss[0].item())
-            train_obj_losses.append(loss[1].item())
-            train_loc_losses.append(loss[2].item())
-            if plot_freq and iter_count%plot_freq==0:
-                show_preds(scores[i], locs, loc_fac, anchors, images[i], ax=axs[iter_count//plot_freq,0],
-                           title=f'Iteration {e+1:d}.{ii+1:d}/{epochs:d}.{len(i_train):d}: Train Image')
-
-            # validate
-            validation_step(model, labels, locations, features, i_valid,
-                            valid_bkg_losses, valid_obj_losses, valid_loc_losses,
-                            lab2loc_loss_ratio=lab2loc_loss_ratio, object_overweight=object_overweight,
-                            images=images, anchors=anchors, loc_fac=loc_fac,
-                            do_plot=plot_freq and iter_count%plot_freq==0,
-                            ax=axs[iter_count//plot_freq,1] if plot_freq else None,
-                            title=f'Iteration {e+1:d}.{ii+1:d}/{epochs:d}.{len(i_train):d}: Validation Image', verbose=verbose)
-
-            iter_count += 1
-
-    # summarize
-    if plot_freq:
-        plot_loss(train_bkg_losses, valid_bkg_losses, train_obj_losses, valid_obj_losses,
-                  train_loc_losses, valid_loc_losses, ax=axs[-1,0], epochs=epochs)
-        plt.tight_layout()
-
-    return train_bkg_losses, valid_bkg_losses, train_obj_losses, valid_obj_losses, train_loc_losses, valid_loc_losses
-
 
 def train_model(model, optimizer,
-                images, inputs, labels, locations, loc_fac, anchor_locs, anchors=None,
+                images, inputs, labels, locations, loc_fac, anchor_locs=None, anchors=None,
                 epochs=10, lr=0.003, bs=None, lab2loc_loss_ratio=5, object_overweight=1,
                 i_train=None, i_valid=0.2,
-                verbose=0, plot_freq=10):
+                verbose=0, plot_freq=4):
 
     # Train & validation sets
     n_images = len(images)
@@ -617,9 +574,14 @@ def train_model(model, optimizer,
         param_group['lr'] = lr
 
     # Initialization
+    anchor_locs = to_device(model, [anchor_locs])[0]
+    if type(labels) is not t.Tensor:
+        labels = t.from_numpy(labels)
+    scores = {i: t.ones_like(labels[:, 0]) for i in i_train}
     if plot_freq:
-        nrows = ceil(len(i_train) * epochs / plot_freq) + 1
+        nrows = plot_freq + 2
         _, axs = plt.subplots(nrows, 2, figsize=(18, 6 * nrows))
+        plot_freq = int(len(i_train) * epochs / plot_freq) # n_plots_in_training -> plot_every_n_steps
     train_bkg_losses = []
     train_obj_losses = []
     train_loc_losses = []
@@ -628,49 +590,47 @@ def train_model(model, optimizer,
     valid_loc_losses = []
 
     # Train loop
-    scores = {i: t.ones_like(labels[:, 0]) for i in i_train}
     iter_count = 0
     for e in tnrange(epochs):
 
-        # running_loss = [0,0,0]
         for ii, i in enumerate(i_train):
 
             # train
+            # sample data
             ids = batch_sample(bs, labels[:, i], labs_wrap(scores[i]))
+            X, tmp_labs, tmp_locs = to_device(None, [inputs[i], labels[ids,i], locations[ids,:,i]])
+            # run train step
             optimizer.zero_grad()
-            scores[i], locs = model(inputs[i], anchor_locs)
-            loss = RPN_loss(labs_wrap(scores[i])[ids], locs_wrap(locs)[ids, :], labels[ids, i], locations[ids, :, i],
+            if anchor_locs is None:
+                scores[i], locs = model.train()(X)
+            else:
+                scores[i], locs = model.train()(X, anchor_locs)
+            loss = RPN_loss(labs_wrap(scores[i])[ids], locs_wrap(locs)[ids,:], tmp_labs, tmp_locs,
                             lab_overweight=lab2loc_loss_ratio, object_overweight=object_overweight,
                             verbose=verbose >= 2)
             (loss[0] + loss[1] + loss[2]).backward()
             optimizer.step()
-            # running_loss[0] += loss[0].item()
-            # running_loss[1] += loss[1].item()
-            # running_loss[2] += loss[2].item()
             train_bkg_losses.append(loss[0].item())
             train_obj_losses.append(loss[1].item())
             train_loc_losses.append(loss[2].item())
-            if plot_freq and iter_count % plot_freq == 0:
+            # clean GPU memory
+            clean_device([X, loss, tmp_labs, tmp_locs])
+            # display
+            if plot_freq and (iter_count%plot_freq==0 or iter_count+1==len(i_train)*epochs):
                 show_preds(scores[i], locs, loc_fac, anchors, images[i], ax=axs[iter_count // plot_freq, 0],
                            title=f'Iteration {e+1:d}.{ii+1:d}/{epochs:d}.{len(i_train):d}: Train Image')
 
             # validate
             validation_step(model, labels, locations, inputs, i_valid,
-                            valid_bkg_losses, valid_obj_losses, valid_loc_losses,
+                            valid_bkg_losses, valid_obj_losses, valid_loc_losses, anchor_locs,
                             lab2loc_loss_ratio=lab2loc_loss_ratio, object_overweight=object_overweight,
                             images=images, anchors=anchors, loc_fac=loc_fac,
-                            do_plot=plot_freq and iter_count % plot_freq == 0,
+                            do_plot=plot_freq and (iter_count%plot_freq==0 or iter_count+1==len(i_train)*epochs),
                             ax=axs[iter_count // plot_freq, 1] if plot_freq else None,
                             title=f'Iteration {e+1:d}.{ii+1:d}/{epochs:d}.{len(i_train):d}: Validation Image',
                             verbose=verbose)
 
             iter_count += 1
-        # train_bkg_losses.append(running_loss[0]/len(i_train))
-        # train_obj_losses.append(running_loss[1]/len(i_train))
-        # train_loc_losses.append(running_loss[2]/len(i_train))
-
-        # validate
-        ##
 
     # summarize
     if plot_freq:
@@ -683,16 +643,21 @@ def train_model(model, optimizer,
 
 ################# ANALYSIS #################
 
-def loss_per_image(model, features, labels, locations,
-                   lab_overweight, object_overweight, verbose=False):
+def loss_per_image(model, inputs, labels, locations,
+                   lab_overweight, object_overweight, anchor_locs=None, verbose=False):
+    anchor_locs = to_device(model, [anchor_locs])[0]
+    labels = labels if type(labels) is t.Tensor else t.from_numpy(labels)
+    locations = locations if type(locations) is t.Tensor else t.from_numpy(locations)
     losses = [[] for _ in range(3)]
-    for i, f in enumerate(features):
+    for i, f in enumerate(inputs):
+        X, tmp_labs, tmp_locs = to_device(None, [inputs[i], labels[:, i], locations[:, :, i]])
         with t.no_grad():
-            scores, locs = model(features[i])
-        loss = RPN_loss(scores, locs, labels[:,i], locations[:,:,i], verbose=verbose,
+            scores, locs = model.eval()(X) if anchor_locs is None else model(X,anchor_locs)
+        loss = RPN_loss(scores, locs, tmp_labs, tmp_locs, verbose=verbose,
                         lab_overweight=lab_overweight, object_overweight=object_overweight)
         for j,l in enumerate(loss):
             losses[j].append(float(l))
+        clean_device([X, tmp_labs, tmp_locs, loss])
     return losses
 
 def plot_loss(train_bkg_losses, valid_bkg_losses, train_obj_losses, valid_obj_losses,
@@ -734,7 +699,6 @@ def show_preds(labs, locs, loc_fac, anchors=None, image=None, thresh=0.5, abs_lo
     
     if thresh > labs.max():
         print(f'[{title:s}] No scores above threshold. Largest score: {labs.max():.3f}/{thresh:.3f}')
-        #return
     thresh = thresh if thresh<=labs.max() else 0.9*labs.max().cpu().data.numpy()
     bxs, scrs = preds2boxes(labs, locs, loc_fac, thresh, abs_locs=abs_locs)
     if anchors is not None: anchors = anchors[labs.cpu().data.numpy() >= thresh, :]
@@ -775,12 +739,12 @@ def show_roi(scores, roi, loc_fac, image=None,
     ax.set_title(title+f'\nProposed Regions Of Interest')
     ax.legend()
 
-def summarize_experiment(exp_name, model, images, features, labels, locations,
+def summarize_experiment(exp_name, model, images, inputs, labels, locations,
                          lab_overweight, object_overweight, i_train,
                          train_bkg_losses=None, valid_bkg_losses=None, train_obj_losses=None,
                          valid_obj_losses=None, train_loc_losses=None, valid_loc_losses=None,
                          epochs=None, ax_losses=None, ax_samples=None, sample_images=None,
-                         loc_fac=None, thresh=0.4, n_display=np.Inf, n_join=1):
+                         anchor_locs=None, loc_fac=None, thresh=0.4, n_display=np.Inf, n_join=1):
 
     if ax_losses is not None:
         plot_loss(train_bkg_losses, valid_bkg_losses, train_obj_losses, valid_obj_losses,
@@ -788,20 +752,29 @@ def summarize_experiment(exp_name, model, images, features, labels, locations,
                   title=exp_name)
 
     if ax_samples is not None:
+        anchor_locs = to_device(model, [anchor_locs])[0]
         if type(sample_images) is dict:
             for nm, ax in zip(sample_images, ax_samples):
+                X = inputs[sample_images[nm]].to(DEVICE)
                 with t.no_grad():
-                    labs, locs = model(features[sample_images[nm]])
+                    labs, locs = model.eval()(X) if anchor_locs is None else model(X,anchor_locs)
                 show_preds(labs, locs, loc_fac, image=images[sample_images[nm]], thresh=thresh,
                            n_display=n_display, ax=ax, title=nm)
+                del X
+                gc.collect()
+                t.cuda.empty_cache()
         else:
             for image, ax in zip(sample_images, ax_samples):
+                X = inputs[image].to(DEVICE)
                 with t.no_grad():
-                    labs, locs = model(features[image])
+                    labs, locs = model.eval()(X) if anchor_locs is None else model(X,anchor_locs)
                 show_preds(labs, locs, loc_fac, image=images[image], thresh=thresh,
                            n_display=n_display, ax=ax, title=exp_name)
+                del X
+                gc.collect()
+                t.cuda.empty_cache()
 
-    losses = loss_per_image(model, features, labels, locations, lab_overweight, object_overweight)
+    losses = loss_per_image(model, inputs, labels, locations, lab_overweight, object_overweight, anchor_locs)
 
     return pd.DataFrame({
         'experiment': 3*len(losses[0])*[exp_name],
@@ -810,6 +783,33 @@ def summarize_experiment(exp_name, model, images, features, labels, locations,
         'loss_type': len(images)*['Bkg detection'] + len(images)*['Obj detection'] + len(images)*['Location'],
         'loss': losses[0] + losses[1] + losses[2]
     })
+
+def compare_preds(model1, model2, images, inputs, labels, locations, anchor_locs, loc_fac,
+                  thresh=0.4, ids=None, models_names=('Model 1','Model 2')):
+    if ids is None:
+        ids = list(range(len(images)))
+
+    model1.to(DEVICE)
+    model2.to(DEVICE)
+    anchor_locs = to_device(None, [anchor_locs])[0]
+
+    _, axs = plt.subplots(len(ids), 2, figsize=(18, len(ids)*6))
+
+    for ii,i in enumerate(ids):
+        X, tmp_labs, tmp_locs = to_device(None, [inputs[i], labels[:, i], locations[:, :, i]])
+
+        with t.no_grad():
+            labs, locs = model1.eval()(X, anchor_locs)
+        show_preds(labs, locs, loc_fac, image=images[i], thresh=thresh,
+                      n_display=np.Inf, ax=axs[ii,0], title=models_names[0]+f' ({i:d})')
+        with t.no_grad():
+            labs, locs = model2.eval()(X, anchor_locs)
+        show_preds(labs, locs, loc_fac, image=images[i], thresh=thresh,
+                      n_display=np.Inf, ax=axs[ii,1], title=models_names[1]+f' ({i:d})')
+
+        clean_device([X, tmp_labs, tmp_locs])
+
+    plt.tight_layout()
 
 
 ################# OTHERS #################
