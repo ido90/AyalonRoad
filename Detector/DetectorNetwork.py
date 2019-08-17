@@ -320,6 +320,16 @@ def add_location_to_features(features, anchors, anchors_per_location=3*3, verbos
         
     return features
 
+def get_trained_detector(src='models/model_12images.mdl', set_eval=True):
+    conv = get_resnet_conv_model()
+    head = RPN(in_channels=128, loc_features=True)
+    model = DetectionNetwork(conv, head)
+    model.load_state_dict(t.load(src))
+    if set_eval:
+        set_grad(model, 0, verbose=False)
+        model.eval()
+    return model
+
 
 ################# WRAP-UP & LOSS #################
 
