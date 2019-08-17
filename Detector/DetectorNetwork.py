@@ -328,8 +328,8 @@ def add_location_to_features(features, anchors, anchors_per_location=3*3, verbos
         
     return features
 
-def get_trained_detector(src='models/model_13images.mdl', set_eval=True,
-                         head_src='models/head_13images.mdl', only_trained_head=False):
+def get_trained_detector(src='models/model_14images.mdl', set_eval=True,
+                         head_src='models/head_14images.mdl', only_trained_head=False):
     conv = get_resnet_conv_model()
     head = RPN(in_channels=128, loc_features=True, verbose=False)
     model = DetectionNetwork(conv, head)
