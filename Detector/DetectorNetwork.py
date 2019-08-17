@@ -22,6 +22,107 @@ from torch import nn
 from torch.nn import functional as F
 from torch.autograd import Variable
 import torchvision as tv
+from torch import optim
+
+
+################# MAIN #################
+
+def experiment_instance(
+        exp_name = 'demo',
+        labels_path = r'labels/anchor_labels_9.pkl',
+        anchors_per_location = 9,
+        conv_mid_layers = 1,
+        mid_channels = 128,
+        location_features = True,
+        loc_channels1 = 4,
+        loc_channels2 = 4,
+        loc_tansig = 1,
+        i_train = list(range(10)),
+        i_valid = list(range(10,12)),
+        epochs = 64,
+        batch_size = 64,
+        learning_rate = 0.003,
+        seed = 1,
+        overweights = (20, 1/10),
+        ax_losses = None,
+        ax_samples = None,
+        i_samples = {'Sunset':1,'Big Reflection':6,'Small Fakes':8,
+                     'Out-of-sample Reflections':10,'Out-of-sample Night':11},
+        train_plot_freq = 0,
+        display_thresh = 0.4,
+        models_path = Path('experiments'),
+        load_model = None,
+        save_model = None,
+        cleanup = True,
+        verbose = 1
+):
+
+    if verbose >= 1:
+        print(f'\nExperiment:\t{exp_name:s}')
+
+    # Initialization
+    # Note: few experiments require unique initialization, and it's not time-consuming,
+    #       so I do it here for every experiment rather than initializing once and only loading here.
+    # Images
+    files, images, W, H, i_used_images = get_training_images(verbose=verbose>=3)
+    inputs = ims2vars(images, verbose=verbose>=3)
+    # Labels
+    labels, locations, anchors = get_training_labels(labs_path=labels_path, verbose=verbose>=2)
+    # Feature map
+    conv = get_resnet_conv_model()
+    set_grad(conv, 0, verbose=verbose>=2)
+    inputs, labels, locations = to_device(conv, inputs, labels, locations, verbose=verbose>=2)
+    features = []
+    for file, X in zip(files, inputs):
+        ft, map_h, map_w, feature_size = get_features(X, conv, W, verbose=(verbose>=2 and file==files[0]))
+        features.append(ft)
+    if location_features:
+        features = add_location_to_features(features, anchors, verbose=verbose>=2,
+                                            anchors_per_location=anchors_per_location)
+    # Set seed
+    if seed is not None:
+        set_seeds(seed)
+    # RPN
+    loc_fac = LocationFactory(anchors, H, W)
+    head = RPN(features=features[0], out_channels=mid_channels, loc_features=location_features,
+               n_anchors=anchors_per_location, n_mid_layers=conv_mid_layers,
+               loc_tansig=loc_tansig, loc_channels1=loc_channels1, loc_channels2=loc_channels2,
+               verbose=verbose>=2)
+    if verbose >= 1:
+        print(f'Total params:\t{np.sum([t.numel(p) for p in head.parameters()]):.0f}')
+    head.initialize_params()
+    set_grad(head, 1, verbose=verbose>=2)
+    features, labels, locations = to_device(head, features, labels, locations, verbose=verbose>=3)
+
+    # Training
+    if load_model:
+        head.load_state_dict(t.load(models_path/load_model))
+        ax_losses = None
+        losses = [None for _ in range(6)]
+    else:
+        head_optimizer = optim.Adam(head.parameters())
+        losses = \
+            train_model_head(head, head_optimizer, images, features, labels, locations, loc_fac, anchors=None,
+                             epochs=epochs, lr=learning_rate, bs=batch_size,
+                             lab2loc_loss_ratio=overweights[0], object_overweight=overweights[1],
+                             i_train=i_train, i_valid=i_valid, verbose=verbose-1, plot_freq=train_plot_freq)
+
+    # Summary
+    ret = summarize_experiment(exp_name, head, images, features, labels, locations,
+                               *overweights, i_train, *losses, epochs=epochs,
+                               ax_losses=ax_losses, ax_samples=ax_samples,
+                               sample_images=i_samples, loc_fac=loc_fac,
+                               thresh=display_thresh, n_join=len(i_train))
+
+    if save_model:
+        t.save(head.state_dict(), models_path/save_model)
+
+    if cleanup:
+        del conv, head, inputs, features, labels, locations
+        gc.collect()
+        t.cuda.empty_cache()
+
+    return ret
 
 
 ################# DATA #################
@@ -38,12 +139,14 @@ def get_training_labels(labs_path='labels/anchor_labels.pkl', keep_ids=None, ver
     return labels, locations, anchors
 
 def get_training_images(ims_path=Path(r'../annotator/sampled_frames'), filter_list=tuple(), verbose=True):
-    files = [f for f in os.listdir(ims_path) if f.endswith('.png') and f not in filter_list]
+    files = [(i,f) for i,f in enumerate(os.listdir(ims_path)) if f.endswith('.png') and f not in filter_list]
+    i_used_images = [f[0] for f in files]
+    files = [f[1] for f in files]
     images = [Image.open(ims_path/f) for f in files]
     W,H = images[0].size
     if verbose:
         print('Image shape:',W,H)
-    return files, images, W, H
+    return files, images, W, H, i_used_images
 
 def normalize_images(images, imagenet_mean=(0.485,0.456,0.406), imagenet_std=(0.229,0.224,0.225), inline=False, verbose=False):
     X = images if inline else t.empty_like(images)
@@ -58,6 +161,88 @@ def normalize_images(images, imagenet_mean=(0.485,0.456,0.406), imagenet_std=(0.
 
 
 ################# NETWORKS #################
+
+class RPN(nn.Module):
+    def __init__(self, n_mid_layers=1, in_channels=None, mid_channels=None, out_channels=None, features=None,
+                 n_anchors=3*3,
+                 loc_features=False, loc_tansig=1, loc_channels1=4, loc_channels2=4,
+                 verbose=True):
+
+        super().__init__()
+
+        self.loc_features = loc_features
+        self.tansig = loc_tansig
+
+        if in_channels is None:
+            in_channels = features.shape[1] - (2 if self.loc_features else 0)
+        if mid_channels is None or n_mid_layers == 1:
+            mid_channels = int(in_channels)
+        if out_channels is None:
+            out_channels = int(mid_channels)
+
+        if verbose:
+            print(
+                f'Network channels: {in_channels:d} -> {mid_channels if n_mid_layers>1 else "(skipped)"} -> {out_channels:d} -> {(4+1)*n_anchors:d}')
+
+        # standard convolution(s) on top of the input feature-map
+        self.conv1 = nn.Conv2d(in_channels, mid_channels, 3, 1, 1) if n_mid_layers > 1 else None
+        self.conv2 = nn.Conv2d(mid_channels, out_channels, 3, 1, 1)
+
+        # a small network using the location (x,y) of an anchor-box within image
+        self.loc_layer1 = nn.Conv2d(2, loc_channels1, 1, 1, 0) if self.loc_features else None
+        self.loc_layer2 = nn.Conv2d(loc_channels1, loc_channels2, 1, 1, 0) if self.loc_features else None
+        self.relu = nn.ReLU(inplace=False)
+
+        # regression head for location and classification head for detection
+        self.reg_layer = nn.Conv2d(out_channels, 4 * n_anchors, 1, 1, 0)
+        self.cls_layer = nn.Conv2d(out_channels + (loc_channels2 if self.loc_features else 0), 1 * n_anchors, 1, 1, 0)
+
+    def initialize_params(self, s=0.01):
+        for layer in (self.conv1, self.conv2, self.loc_layer1, self.loc_layer2, self.reg_layer, self.cls_layer):
+            if layer is not None:
+                layer.weight.data.normal_(0, s)
+                layer.bias.data.zero_()
+
+    def forward(self, x, verbose=False):
+        # convolutions of the input feature-map
+        X = x[:, :-2, :, :] if self.loc_features else x
+        mid = self.conv1(X) if self.conv1 is not None else X
+        out = self.conv2(mid)
+        out = self.relu(out)
+
+        # regression
+        reg = self.reg_layer(out)
+
+        # anchor location
+        if self.loc_features:
+            locs = self.loc_layer1(x[:, -2:, :, :])
+            locs = t.tanh(locs) if self.tansig >= 1 else self.relu(locs)
+            locs = self.loc_layer2(locs)
+            locs = t.tanh(locs) if self.tansig >= 2 else self.relu(locs)
+
+        # classification
+        x_cls = t.cat((out,locs),1) if self.loc_features else out
+        cls = t.sigmoid(self.cls_layer(x_cls))
+
+        if verbose:
+            print('For a single image - shapes of features, mid-layers, locations and scores:',
+                  x.shape, out.shape, reg.shape, cls.shape, sep='\n')
+        return cls, reg
+
+
+class DetectionNetwork(nn.Module):
+    def __init__(self, conv_network, rpn):
+        super().__init__()
+        self.conv_network = conv_network
+        self.RPN = rpn
+        self.loc_features = rpn.loc_features
+
+    def forward(self, image, locations=None):
+        features = self.conv_network(image)
+        all_features = t.cat((features, locations), 1) if self.loc_features else features
+        cls, reg = self.RPN(all_features)
+        return cls, reg
+
 
 def set_grad(model, req, verbose=True):
     req = bool(req)
@@ -74,18 +259,25 @@ def get_resnet_conv_model(n_layers=6, pretrained=True):
     conv = nn.Sequential(*list(resnet.children())[:n_layers])
     return conv
 
-def get_features(image, model, normalize=True, verbose=True):
-    X = t.Tensor(t.tensor(np.array(image)).unsqueeze(0).permute(0,3,1,2).type('torch.FloatTensor'))
-    if normalize:
-        X = normalize_images(X, inline=True, verbose=verbose)
-    X = Variable(X)
-    features = model(X)
+def ims2vars(images, normalize=True, verbose=1):
+    inputs = []
+    for i,image in enumerate(images):
+        X = t.Tensor(t.tensor(np.array(image)).unsqueeze(0).permute(0,3,1,2).type('torch.FloatTensor'))
+        if normalize:
+            X = normalize_images(X, inline=True, verbose=(verbose>=2 or (verbose>=1 and i==0)))
+        X = Variable(X)
+        inputs.append(X)
+    return inputs
+
+def get_features(X, model, W, verbose=True):
+    with t.no_grad():
+        features = model(X)
     map_h,map_w = features.shape[-2:]
-    feature_size = image.size[0] // features.shape[-1]
+    feature_size = W // map_w
     if verbose:
         print('Feature-map shape:',features.shape)
         print('Feature size:',feature_size)
-    return features, X, map_h, map_w, feature_size
+    return features, map_h, map_w, feature_size
 
 def add_location_to_features(features, anchors, anchors_per_location=3*3, verbose=True):
     if verbose:
@@ -97,67 +289,27 @@ def add_location_to_features(features, anchors, anchors_per_location=3*3, verbos
     x0 = t.from_numpy(0.5*(anchors[anchors_locs_ids,1]+anchors[anchors_locs_ids,3]))
     y0 = y0.view(1,1,features[0].shape[2],features[0].shape[3]).float()
     x0 = x0.view(1,1,features[0].shape[2],features[0].shape[3]).float()
-    
+
     if verbose:
         print(f'\t{x0.min():.0f}<=x0<={x0.max():.0f}, {y0.min():.0f}<=y0<={y0.max():.0f}')
     y0 = y0 / y0.max()
     x0 = x0 / x0.max()
-    
+
     features = [t.cat((f.cpu(),Variable(y0),Variable(x0)),1) for f in features]
     if verbose:
         print('With location:\t',features[0].shape)
         
     return features
 
-class RPN(nn.Module):
-    def __init__(self, in_channels=None, mid_channels=None, out_channels=None, features=None, n_anchors=3*3,
-                 loc_features=False, verbose=True):
-        super().__init__()
-        if in_channels is None:
-            in_channels = features.shape[1]
-        if mid_channels is None:
-            mid_channels = int(in_channels)
-        if out_channels is None:
-            out_channels = int(2 * mid_channels)
-        
-        if verbose:
-            print(f'Network channels: {in_channels:d} -> {mid_channels:d} -> {out_channels:d} -> {(4+1)*n_anchors:d}')
-        
-        self.loc_features = loc_features
-        
-#         self.conv1 = nn.Conv2d(in_channels, mid_channels, 3, 1, 1)
-        self.conv2 = nn.Conv2d(mid_channels, out_channels, 3, 1, 1)
-        self.loc_layer = nn.Conv2d(2, 2, 1, 1, 0)
-        self.relu = nn.ReLU(inplace=False)
-        self.reg_layer = nn.Conv2d(out_channels, 4*n_anchors,  1, 1, 0)
-        self.cls_layer = nn.Conv2d(out_channels, 1*n_anchors,  1, 1, 0)
-    
-    def initialize_params(self, s=0.01):
-        for layer in (self.conv2, self.loc_layer, self.reg_layer, self.cls_layer):
-            layer.weight.data.normal_(0, s)
-            layer.bias.data.zero_()
-    
-    def forward(self, x, verbose=False):
-        if self.loc_features:
-            locs = x[:,-2:,:,:].clone()
-            locs = self.loc_layer(locs)
-            locs = self.relu(locs)
-            xx = t.cat((x[:,:-2,:,:],locs),1)
-        else:
-            xx = x
-        out = self.conv2(x)
-        out = self.relu(out)
-        cls = t.sigmoid(self.cls_layer(out))
-        reg = self.reg_layer(out)
-        if verbose:
-            print('For a single image - shapes of features, mid-layers, locations and scores:',
-                  x.shape, out.shape, reg.shape, cls.shape, sep='\n')
-        return cls, reg
-
 
 ################# WRAP-UP & LOSS #################
 
 class LocationFactory:
+    '''
+    Many times we need to convert relative locations in anchor boxes to absolute locations in image.
+    Since every time requires the same manipulations over the anchor coordinates, we do them only once
+    and store them in an object.
+    '''
     def __init__(self, anchors, H=1080, W=1920):
         self.H = H
         self.W = W
@@ -172,8 +324,6 @@ class LocationFactory:
         self.base_w = np.maximum(self.base_w, eps)
 
     def rel2abs(self, locs):
-        n_anchors = locs.shape[0]
-        n_images = locs.shape[1]
         # rel -> abs
         obj_y0 = self.base_y0 + self.base_h * locs[:,0]
         obj_x0 = self.base_x0 + self.base_w * locs[:,1]
@@ -193,8 +343,6 @@ class LocationFactory:
         return np.vstack((y1, x1, y2, x2)).transpose()
 
     def rel2abs_multi(self, locs):
-        n_anchors = locs.shape[0]
-        n_images = locs.shape[1]
         # rel -> abs
         obj_y0 = self.base_y0[:,np.newaxis] + self.base_h[:,np.newaxis] * locs[:,0,:]
         obj_x0 = self.base_x0[:,np.newaxis] + self.base_w[:,np.newaxis] * locs[:,1,:]
@@ -229,7 +377,7 @@ def RPN_loss(labs, locs, ref_labs, ref_locs, lab_overweight=5, object_overweight
     # set masks according to anchors containing objects
     object_mask = ref_labs == 1
     background_mask = ref_labs == 0
-    object_overweight *= object_mask.float().sum() / background_mask.float().sum()
+    # object_overweight *= object_mask.float().sum() / background_mask.float().sum() # TODO REMOVE
     if verbose:
         print('All / backgrounds / objects:', object_mask.shape, background_mask.sum(), object_mask.sum())
     
@@ -239,7 +387,7 @@ def RPN_loss(labs, locs, ref_labs, ref_locs, lab_overweight=5, object_overweight
         F.binary_cross_entropy(labs[object_mask].float(), ref_labs[object_mask].float())
     loc_loss = F.smooth_l1_loss(locs[object_mask].float(), ref_locs[object_mask].float())
     if verbose:
-        print('Losses (labels, locations):', lab_loss, loc_loss)
+        print('Losses (background detection, object detections, locations):', bg_lab_loss, obj_lab_loss, loc_loss)
 
     return bg_lab_loss, obj_lab_loss, loc_loss
 
@@ -332,12 +480,51 @@ def to_device(model, input_list, labels, locations, verbose=True):
     
     return input_list, labels, locations
 
-def train_model(model, optimizer,
-                images, features, labels, locations, loc_fac, anchors=None,
-                epochs=10, lr=0.003, lab2loc_loss_ratio=5, object_overweight=1,
-                i_train=None, i_valid=0.2,
-                verbose=0, plot_freq=2, ncols=1):
+def batch_sample(bs, labs, weights=None):
+    if bs is None:
+        return np.arange(labs.shape[0])
+
+    if weights is not None:
+        weights = weights.data.cpu().numpy()
+
+    n_obj = int(min(ceil(bs / 2), (labs == 1).sum()))
+    i_objs = (labs == 1).nonzero().data.cpu().permute((1, 0)).numpy().squeeze(0)
+    i_objs = np.random.choice(i_objs, n_obj, replace=False, p=None if weights is None else weights[i_objs]/weights[i_objs].sum())
+
+    n_bkg = bs - n_obj
+    i_bkgs = (labs == 0).nonzero().data.cpu().permute((1, 0)).numpy().squeeze(0)
+    i_bkgs = np.random.choice(i_bkgs, n_bkg, replace=False, p=None if weights is None else weights[i_bkgs]/weights[i_bkgs].sum())
+
+    return np.concatenate((i_objs, i_bkgs))
+
+def validation_step(model, labels, locations, features, i_valid,
+                    valid_bkg_losses, valid_obj_losses, valid_loc_losses,
+                    lab2loc_loss_ratio=5, object_overweight=1,
+                    do_plot=False, images=None, anchors=None, loc_fac=None, ax=None, title='', verbose=0):
     
+    running_loss = [0,0,0]
+    for ii,i in enumerate(i_valid):
+        with t.no_grad():
+            scores, locs = model(features[i])
+            loss = RPN_loss(scores, locs, labels[:,i], locations[:,:,i],
+                            lab_overweight=lab2loc_loss_ratio, object_overweight=object_overweight, verbose=verbose>=3)
+        running_loss[0] += loss[0].item()
+        running_loss[1] += loss[1].item()
+        running_loss[2] += loss[2].item()
+        if do_plot and ii==0:
+            show_preds(scores, locs, loc_fac, anchors, images[i], ax=ax,
+                       title=title)
+            
+    valid_bkg_losses.append(running_loss[0]/len(i_valid))
+    valid_obj_losses.append(running_loss[1]/len(i_valid))
+    valid_loc_losses.append(running_loss[2]/len(i_valid))
+
+def train_model_head(model, optimizer,
+                     images, features, labels, locations, loc_fac, anchors=None,
+                     epochs=10, lr=0.003, bs=None, lab2loc_loss_ratio=5, object_overweight=1,
+                     i_train=None, i_valid=0.2,
+                     verbose=0, plot_freq=10):
+
     # Train & validation sets
     if i_train is None:
         if type(i_valid) in (int,float):
@@ -346,81 +533,186 @@ def train_model(model, optimizer,
         i_train = [i for i in np.arange(len(features)) if i not in i_valid]
     elif type(i_valid) in (int,float):
         i_valid = [i for i in np.arange(len(features)) if i not in i_train]
-    
+    if verbose >= 1:
+        print(f'Train/valid images:\t{len(i_train):d} / {len(i_valid):d}')
+
     # Set lr
     for param_group in optimizer.param_groups:
-        param_group['lr'] = 0.003
+        param_group['lr'] = lr
 
     # Initialization
     if plot_freq:
-        nrows = ceil(epochs/plot_freq) + 1
-        _, axs = plt.subplots(nrows,2*ncols, figsize=(18,6*nrows))
+        nrows = ceil(len(i_train)*epochs/plot_freq) + 1
+        _, axs = plt.subplots(nrows,2, figsize=(18,6*nrows))
     train_bkg_losses = []
     train_obj_losses = []
     train_loc_losses = []
     valid_bkg_losses = []
     valid_obj_losses = []
     valid_loc_losses = []
-    
+
     # Train loop
+    scores = {i: t.ones_like(labels[:,0]) for i in i_train}
+    iter_count = 0
     for e in tnrange(epochs):
 
-        # train
-        running_loss = [0,0,0]
+        # running_loss = [0,0,0]
         for ii,i in enumerate(i_train):
+
+            # train
+            ids = batch_sample(bs, labels[:,i], labs_wrap(scores[i]))
             optimizer.zero_grad()
-            scores, locs = model(features[i])
-            loss = RPN_loss(scores, locs, labels[:,i], locations[:,:,i],
+            scores[i], locs = model(features[i])
+            loss = RPN_loss(labs_wrap(scores[i])[ids], locs_wrap(locs)[ids,:], labels[ids,i], locations[ids,:,i],
                             lab_overweight=lab2loc_loss_ratio, object_overweight=object_overweight, verbose=verbose>=2)
             (loss[0]+loss[1]+loss[2]).backward()
             optimizer.step()
-            running_loss[0] += loss[0].item()
-            running_loss[1] += loss[1].item()
-            running_loss[2] += loss[2].item()
-            if plot_freq and e%plot_freq==0 and ii < ncols:
-                show_preds(scores, locs, loc_fac, anchors, images[i], ax=axs[e//plot_freq,ii],
-                              title=f'Epoch {e+1}/{epochs}: Train Image')
-        train_bkg_losses.append(running_loss[0]/len(i_train))
-        train_obj_losses.append(running_loss[1]/len(i_train))
-        train_loc_losses.append(running_loss[2]/len(i_train))
+            train_bkg_losses.append(loss[0].item())
+            train_obj_losses.append(loss[1].item())
+            train_loc_losses.append(loss[2].item())
+            if plot_freq and iter_count%plot_freq==0:
+                show_preds(scores[i], locs, loc_fac, anchors, images[i], ax=axs[iter_count//plot_freq,0],
+                           title=f'Iteration {e+1:d}.{ii+1:d}/{epochs:d}.{len(i_train):d}: Train Image')
 
-        # validate
-        running_loss = [0,0,0]
-        for ii,i in enumerate(i_valid):
-            scores, locs = model(features[i])
-            loss = RPN_loss(scores, locs, labels[:,i], locations[:,:,i],
-                            lab_overweight=lab2loc_loss_ratio, object_overweight=object_overweight, verbose=verbose>=3)
-            running_loss[0] += loss[0].item()
-            running_loss[1] += loss[1].item()
-            running_loss[2] += loss[2].item()
-            if plot_freq and e%plot_freq==0 and ii < ncols:
-                show_preds(scores, locs, loc_fac, anchors, images[i], ax=axs[e//plot_freq,ncols+ii],
-                              title=f'Epoch {e+1}/{epochs}: Validation Image')
-        valid_bkg_losses.append(running_loss[0]/len(i_valid))
-        valid_obj_losses.append(running_loss[1]/len(i_valid))
-        valid_loc_losses.append(running_loss[2]/len(i_valid))
+            # validate
+            validation_step(model, labels, locations, features, i_valid,
+                            valid_bkg_losses, valid_obj_losses, valid_loc_losses,
+                            lab2loc_loss_ratio=lab2loc_loss_ratio, object_overweight=object_overweight,
+                            images=images, anchors=anchors, loc_fac=loc_fac,
+                            do_plot=plot_freq and iter_count%plot_freq==0,
+                            ax=axs[iter_count//plot_freq,1] if plot_freq else None,
+                            title=f'Iteration {e+1:d}.{ii+1:d}/{epochs:d}.{len(i_train):d}: Validation Image', verbose=verbose)
+
+            iter_count += 1
 
     # summarize
     if plot_freq:
-        ax = axs[-1,0]
-        ax.plot(1+np.arange(epochs), train_bkg_losses, 'k--', label='Background (train)')
-        ax.plot(1+np.arange(epochs), valid_bkg_losses, 'k-', label='Background (valid)')
-        ax.plot(1+np.arange(epochs), train_obj_losses, 'b--', label='Detection (train)')
-        ax.plot(1+np.arange(epochs), valid_obj_losses, 'b-', label='Detection (valid)')
-        ax.plot(1+np.arange(epochs), train_loc_losses, 'r--', label='Location (train)')
-        ax.plot(1+np.arange(epochs), valid_loc_losses, 'r-', label='Location (valid)')
-        ax.set_xlabel('Epoch')
-        ax.set_ylabel('Loss')
-        #ax.set_ylim((0,None))
-        ax.set_yscale('log')
-        ax.grid()
-        ax.legend()
-
+        plot_loss(train_bkg_losses, valid_bkg_losses, train_obj_losses, valid_obj_losses,
+                  train_loc_losses, valid_loc_losses, ax=axs[-1,0], epochs=epochs)
         plt.tight_layout()
-    
+
     return train_bkg_losses, valid_bkg_losses, train_obj_losses, valid_obj_losses, train_loc_losses, valid_loc_losses
 
+
+def train_model(model, optimizer,
+                images, inputs, labels, locations, loc_fac, anchor_locs, anchors=None,
+                epochs=10, lr=0.003, bs=None, lab2loc_loss_ratio=5, object_overweight=1,
+                i_train=None, i_valid=0.2,
+                verbose=0, plot_freq=10):
+
+    # Train & validation sets
+    n_images = len(images)
+    if i_train is None:
+        if type(i_valid) in (int, float):
+            n_valid = int(n_images * i_valid)
+            i_valid = sorted(np.random.choice(np.arange(n_images), n_valid))
+        i_train = [i for i in np.arange(n_images) if i not in i_valid]
+    elif type(i_valid) in (int, float):
+        i_valid = [i for i in np.arange(n_images) if i not in i_train]
+    if verbose >= 1:
+        print(f'Train/valid images:\t{len(i_train):d} / {len(i_valid):d}')
+
+    # Set lr
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+
+    # Initialization
+    if plot_freq:
+        nrows = ceil(len(i_train) * epochs / plot_freq) + 1
+        _, axs = plt.subplots(nrows, 2, figsize=(18, 6 * nrows))
+    train_bkg_losses = []
+    train_obj_losses = []
+    train_loc_losses = []
+    valid_bkg_losses = []
+    valid_obj_losses = []
+    valid_loc_losses = []
+
+    # Train loop
+    scores = {i: t.ones_like(labels[:, 0]) for i in i_train}
+    iter_count = 0
+    for e in tnrange(epochs):
+
+        # running_loss = [0,0,0]
+        for ii, i in enumerate(i_train):
+
+            # train
+            ids = batch_sample(bs, labels[:, i], labs_wrap(scores[i]))
+            optimizer.zero_grad()
+            scores[i], locs = model(inputs[i], anchor_locs)
+            loss = RPN_loss(labs_wrap(scores[i])[ids], locs_wrap(locs)[ids, :], labels[ids, i], locations[ids, :, i],
+                            lab_overweight=lab2loc_loss_ratio, object_overweight=object_overweight,
+                            verbose=verbose >= 2)
+            (loss[0] + loss[1] + loss[2]).backward()
+            optimizer.step()
+            # running_loss[0] += loss[0].item()
+            # running_loss[1] += loss[1].item()
+            # running_loss[2] += loss[2].item()
+            train_bkg_losses.append(loss[0].item())
+            train_obj_losses.append(loss[1].item())
+            train_loc_losses.append(loss[2].item())
+            if plot_freq and iter_count % plot_freq == 0:
+                show_preds(scores[i], locs, loc_fac, anchors, images[i], ax=axs[iter_count // plot_freq, 0],
+                           title=f'Iteration {e+1:d}.{ii+1:d}/{epochs:d}.{len(i_train):d}: Train Image')
+
+            # validate
+            validation_step(model, labels, locations, inputs, i_valid,
+                            valid_bkg_losses, valid_obj_losses, valid_loc_losses,
+                            lab2loc_loss_ratio=lab2loc_loss_ratio, object_overweight=object_overweight,
+                            images=images, anchors=anchors, loc_fac=loc_fac,
+                            do_plot=plot_freq and iter_count % plot_freq == 0,
+                            ax=axs[iter_count // plot_freq, 1] if plot_freq else None,
+                            title=f'Iteration {e+1:d}.{ii+1:d}/{epochs:d}.{len(i_train):d}: Validation Image',
+                            verbose=verbose)
+
+            iter_count += 1
+        # train_bkg_losses.append(running_loss[0]/len(i_train))
+        # train_obj_losses.append(running_loss[1]/len(i_train))
+        # train_loc_losses.append(running_loss[2]/len(i_train))
+
+        # validate
+        ##
+
+    # summarize
+    if plot_freq:
+        plot_loss(train_bkg_losses, valid_bkg_losses, train_obj_losses, valid_obj_losses,
+                  train_loc_losses, valid_loc_losses, ax=axs[-1, 0], epochs=epochs)
+        plt.tight_layout()
+
+    return train_bkg_losses, valid_bkg_losses, train_obj_losses, valid_obj_losses, train_loc_losses, valid_loc_losses
+
+
 ################# ANALYSIS #################
+
+def loss_per_image(model, features, labels, locations,
+                   lab_overweight, object_overweight, verbose=False):
+    losses = [[] for _ in range(3)]
+    for i, f in enumerate(features):
+        with t.no_grad():
+            scores, locs = model(features[i])
+        loss = RPN_loss(scores, locs, labels[:,i], locations[:,:,i], verbose=verbose,
+                        lab_overweight=lab_overweight, object_overweight=object_overweight)
+        for j,l in enumerate(loss):
+            losses[j].append(float(l))
+    return losses
+
+def plot_loss(train_bkg_losses, valid_bkg_losses, train_obj_losses, valid_obj_losses,
+              train_loc_losses, valid_loc_losses, ax, n_join=1, logscale=True, epochs=None, title=''):
+    count = 1 + np.arange(len(train_bkg_losses)//n_join)
+    ax.plot(count, np.mean(np.array(train_bkg_losses).reshape(-1,n_join),axis=1), 'k--', label='Background (train)')
+    ax.plot(count, np.mean(np.array(valid_bkg_losses).reshape(-1,n_join),axis=1), 'k-', label='Background (valid)')
+    ax.plot(count, np.mean(np.array(train_obj_losses).reshape(-1,n_join),axis=1), 'b--', label='Detection (train)')
+    ax.plot(count, np.mean(np.array(valid_obj_losses).reshape(-1,n_join),axis=1), 'b-', label='Detection (valid)')
+    ax.plot(count, np.mean(np.array(train_loc_losses).reshape(-1,n_join),axis=1), 'r--', label='Location (train)')
+    ax.plot(count, np.mean(np.array(valid_loc_losses).reshape(-1,n_join),axis=1), 'r-', label='Location (valid)')
+    ax.set_xlabel('Iteration' + f' (total epochs: {epochs:d})' if epochs else '')
+    ax.set_ylabel('Loss')
+    ax.set_title(title)
+    if logscale:
+        ax.set_yscale('log')
+    else:
+        ax.set_ylim((0,None))
+    ax.grid()
+    ax.legend()
 
 def preds2boxes(labs, locs, loc_fac, thresh=0.5, abs_locs=False):
     if type(locs) is not np.ndarray: locs = locs.cpu().data.numpy()
@@ -482,3 +774,52 @@ def show_roi(scores, roi, loc_fac, image=None,
     
     ax.set_title(title+f'\nProposed Regions Of Interest')
     ax.legend()
+
+def summarize_experiment(exp_name, model, images, features, labels, locations,
+                         lab_overweight, object_overweight, i_train,
+                         train_bkg_losses=None, valid_bkg_losses=None, train_obj_losses=None,
+                         valid_obj_losses=None, train_loc_losses=None, valid_loc_losses=None,
+                         epochs=None, ax_losses=None, ax_samples=None, sample_images=None,
+                         loc_fac=None, thresh=0.4, n_display=np.Inf, n_join=1):
+
+    if ax_losses is not None:
+        plot_loss(train_bkg_losses, valid_bkg_losses, train_obj_losses, valid_obj_losses,
+                  train_loc_losses, valid_loc_losses, ax=ax_losses, epochs=epochs, n_join=n_join,
+                  title=exp_name)
+
+    if ax_samples is not None:
+        if type(sample_images) is dict:
+            for nm, ax in zip(sample_images, ax_samples):
+                with t.no_grad():
+                    labs, locs = model(features[sample_images[nm]])
+                show_preds(labs, locs, loc_fac, image=images[sample_images[nm]], thresh=thresh,
+                           n_display=n_display, ax=ax, title=nm)
+        else:
+            for image, ax in zip(sample_images, ax_samples):
+                with t.no_grad():
+                    labs, locs = model(features[image])
+                show_preds(labs, locs, loc_fac, image=images[image], thresh=thresh,
+                           n_display=n_display, ax=ax, title=exp_name)
+
+    losses = loss_per_image(model, features, labels, locations, lab_overweight, object_overweight)
+
+    return pd.DataFrame({
+        'experiment': 3*len(losses[0])*[exp_name],
+        'image': 3*list(range(len(images))),
+        'out_of_sample': np.tile(np.logical_not(np.isin(np.arange(len(images)), i_train)), 3),
+        'loss_type': len(images)*['Bkg detection'] + len(images)*['Obj detection'] + len(images)*['Location'],
+        'loss': losses[0] + losses[1] + losses[2]
+    })
+
+
+################# OTHERS #################
+
+def set_seeds(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    t.manual_seed(seed)
+    t.cuda.manual_seed(seed)
+    t.cuda.manual_seed_all(seed)
+    t.backends.cudnn.deterministic = True
+    t.backends.cudnn.benchmark = False
+    t.backends.cudnn.enabled = False
