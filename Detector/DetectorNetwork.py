@@ -174,6 +174,14 @@ def normalize_images(images, imagenet_mean=(0.485,0.456,0.406), imagenet_std=(0.
         print('Post shape,mean,std', X.shape, X.mean(), X.std())
     return X
 
+def get_video_frame(video, i_frame=None, pth=Path(r'D:\Media\Videos\Ayalon')):
+    cap = cv2.VideoCapture(str(pth/video))
+    if i_frame is None:
+        i_frame = np.random.randint(0, int(cap.get(cv2.CAP_PROP_FRAME_COUNT)))
+    cap.set(cv2.CAP_PROP_POS_FRAMES, i_frame)
+    _, frame = cap.read()
+    return frame[:, :, 2::-1]
+
 
 ################# NETWORKS #################
 
@@ -277,7 +285,7 @@ def get_resnet_conv_model(n_layers=6, pretrained=True):
     conv = nn.Sequential(*list(resnet.children())[:n_layers])
     return conv
 
-def ims2vars(images, normalize=True, verbose=1):
+def ims2vars(images, normalize=True, verbose=0):
     inputs = []
     for i,image in enumerate(images):
         X = t.Tensor(t.tensor(np.array(image)).unsqueeze(0).permute(0,3,1,2).type('torch.FloatTensor'))
@@ -320,11 +328,15 @@ def add_location_to_features(features, anchors, anchors_per_location=3*3, verbos
         
     return features
 
-def get_trained_detector(src='models/model_12images.mdl', set_eval=True):
+def get_trained_detector(src='models/model_13images.mdl', set_eval=True,
+                         head_src='models/head_13images.mdl', only_trained_head=False):
     conv = get_resnet_conv_model()
-    head = RPN(in_channels=128, loc_features=True)
+    head = RPN(in_channels=128, loc_features=True, verbose=False)
     model = DetectionNetwork(conv, head)
-    model.load_state_dict(t.load(src))
+    if only_trained_head:
+        head.load_state_dict(t.load(head_src))
+    else:
+        model.load_state_dict(t.load(src))
     if set_eval:
         set_grad(model, 0, verbose=False)
         model.eval()
@@ -370,26 +382,6 @@ class LocationFactory:
         x2 = np.clip(x2, 0, self.W)
         # stack coordinates together
         return np.vstack((y1, x1, y2, x2)).transpose()
-
-    # TODO remove if unneeded
-    def rel2abs_multi(self, locs):
-        # rel -> abs
-        obj_y0 = self.base_y0[:,np.newaxis] + self.base_h[:,np.newaxis] * locs[:,0,:]
-        obj_x0 = self.base_x0[:,np.newaxis] + self.base_w[:,np.newaxis] * locs[:,1,:]
-        obj_h = self.base_h[:,np.newaxis] * np.exp(locs[:,2,:])
-        obj_w = self.base_w[:,np.newaxis] * np.exp(locs[:,3,:])
-        # y,x,h,w -> y1,x1,y2,x2
-        y1 = obj_y0 - 0.5 * obj_h
-        x1 = obj_x0 - 0.5 * obj_w
-        y2 = obj_y0 + 0.5 * obj_h
-        x2 = obj_x0 + 0.5 * obj_w
-        # clip to image size
-        y1 = np.clip(y1, 0, self.H)
-        x1 = np.clip(x1, 0, self.W)
-        y2 = np.clip(y2, 0, self.H)
-        x2 = np.clip(x2, 0, self.W)
-        # stack coordinates together
-        return np.hstack((y1[:,np.newaxis,:], x1[:,np.newaxis,:], y2[:,np.newaxis,:], x2[:,np.newaxis,:]))
 
 def labs_wrap(labs):
     return labs if labs.ndimension()==1 else labs.permute(0, 2, 3, 1).contiguous().view(1, -1).squeeze(0)
@@ -462,16 +454,21 @@ def nms(dets, scores, thresh=0.5, n_max=None):
     return keep[:n_max]
 
 def regions_of_interest(scores, locs,
-                        min_size=6, max_size=180,
-                        n_pre_nms=12000, n_post_nms=2000, nms_thresh=0.5, # recommended for test: 6000, 300, 0.7
+                        min_size=6, max_size=180, thresh=0.3,
+                        n_pre_nms=3000, n_post_nms=300, nms_thresh=0.25,
                         loc_fac=None, abs_input=False, verbose=False):
     
     scores = labs_wrap(scores).data.numpy()
     locs = locs_wrap(locs).data.numpy()
-    
+
     roi = locs if abs_input else loc_fac.rel2abs(locs)
     if verbose: print('Original size:\t', roi.shape, scores.shape)
-    
+
+    positive_detections = scores >= thresh
+    scores = scores[positive_detections]
+    roi = roi[positive_detections, :]
+    if verbose: print('Low score filter:\t', roi.shape, scores.shape)
+
     keep = np.where((roi[:, 2]-roi[:, 0] >= min_size) & (roi[:, 3]-roi[:, 1] >= min_size) &
                     (roi[:, 2]-roi[:, 0] <= max_size) & (roi[:, 3]-roi[:, 1] <= max_size))[0]
     roi = roi[keep, :]
@@ -729,8 +726,9 @@ def show_preds(labs, locs, loc_fac, anchors=None, image=None, thresh=0.5, abs_lo
     #plt.colorbar(m, ax=ax)
     ax.legend()
 
-def show_roi(scores, roi, loc_fac, image=None,
-             n_display=150, ax=None, fsize=(8,5), title=''):
+def show_roi(scores, roi, image=None,
+             ax=None, fsize=(8,5), title='',
+             remove_axis=True, inner_title='\nProposed Regions Of Interest'):
     
     if ax is None:
         plt.figure(figsize=fsize)
@@ -741,12 +739,13 @@ def show_roi(scores, roi, loc_fac, image=None,
     norm = mpl.colors.Normalize(vmin=scores.min(), vmax=scores.max())
     cmap = cm.RdYlGn
     m = cm.ScalarMappable(norm=norm, cmap=cmap)
-    for i in range(min(len(scores),n_display)):
+    for i in range(len(scores)):
         ax.add_patch(mpl.patches.Rectangle((roi[i,1],roi[i,0]), (roi[i,3]-roi[i,1]), (roi[i,2]-roi[i,0]),
                                            color=m.to_rgba(scores[i]), fill=False,
-                                           label=f'A sample of {min(len(scores),n_display):d}/{len(scores):d} regions (red <= certainty <= green)' if i==0 else None))
+                                           label=f'{len(scores):d} objects ({np.min(scores):.3f} = red <= certainty <= green)' if i==0 else None))
     
-    ax.set_title(title+f'\nProposed Regions Of Interest')
+    ax.set_title(title+inner_title)
+    if remove_axis: ax.axis('off')
     ax.legend()
 
 def summarize_experiment(exp_name, model, images, inputs, labels, locations,
