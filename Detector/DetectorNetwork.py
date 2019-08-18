@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import seaborn as sns
 from math import ceil
+from functools import reduce
 from collections import Counter, OrderedDict
 import cv2
 from PIL import Image
@@ -453,7 +454,41 @@ def nms(dets, scores, thresh=0.5, n_max=None):
 
     return keep[:n_max]
 
-def regions_of_interest(scores, locs,
+class linear_constrainer:
+    def __init__(self, roi, video=None):
+        # roi = (y1, x1, y2, x2)
+        self.y = 0.5 * (roi[:, 0] + roi[:, 2])
+        self.x = 0.5 * (roi[:, 1] + roi[:, 3])
+        self.video = video
+    def linear_constraint(self, b, a, c, s=1):
+        return s * (a*self.x + b*self.y + c) >= 0
+    def linear_constraints(self, coefficients=None, stricter=False):
+        if coefficients is None:
+            coefficients = self.get_coefficients(stricter=stricter)
+        if len(coefficients) == 0:
+            return np.ones(len(self.x), dtype=bool)
+        if len(coefficients) == 1:
+            return self.linear_constraint(*(coefficients[0]))
+        return reduce(
+            np.logical_and,
+            [self.linear_constraint(*C) for C in coefficients]
+        )
+    def get_coefficients(self, epoch=None, stricter=False):
+        if epoch is None:
+            if self.video is None:
+                raise IOError('Must specify 1<=epoch<=3 if there is no video name.')
+            epoch = 1 + (self.video>'20190525_2000') + (self.video>'20190526_1200')
+        if epoch == 1:
+            return ((1,1/3.1,-570,1), (1,1/4.47,-880,-1), (1,-6,9300,1)) + \
+                   (((1,-0.5,50,1),) if stricter else tuple())
+        elif epoch ==2:
+            return ((1,2/15,-250,1), (1,3/38,-500,-1), (1,-1/1.5,917,1)) + \
+                   (((1,-2/3,350,1),) if stricter else tuple())
+        else:
+            return ((1,1/2.27,-840,1), (1,1/2.95,-1050,-1), (1,0,-180,1), (0,1,-1770,-1)) + \
+                   (((1,-0.4,-100,1),) if stricter else tuple())
+
+def regions_of_interest(scores, locs, video=None, constraints=1,
                         min_size=6, max_size=180, thresh=0.3,
                         n_pre_nms=3000, n_post_nms=300, nms_thresh=0.25,
                         loc_fac=None, abs_input=False, verbose=False):
@@ -468,6 +503,21 @@ def regions_of_interest(scores, locs,
     scores = scores[positive_detections]
     roi = roi[positive_detections, :]
     if verbose: print('Low score filter:\t', roi.shape, scores.shape)
+
+    if constraints >= 1:
+        constrainer = linear_constrainer(roi, video)
+        if video is None:
+            # use the union of the valid-zones from all the date-windows
+            valid_locs = reduce(
+                np.logical_or,
+                [constrainer.linear_constraints(constrainer.get_coefficients(i,stricter=constraints>=2))
+                 for i in (1, 2, 3)]
+            )
+        else:
+            valid_locs = constrainer.linear_constraints(stricter=constraints>=2)
+        scores = scores[valid_locs]
+        roi = roi[valid_locs, :]
+        if verbose: print('Invalid location wrt road:\t', roi.shape, scores.shape)
 
     keep = np.where((roi[:, 2]-roi[:, 0] >= min_size) & (roi[:, 3]-roi[:, 1] >= min_size) &
                     (roi[:, 2]-roi[:, 0] <= max_size) & (roi[:, 3]-roi[:, 1] <= max_size))[0]
@@ -735,7 +785,10 @@ def show_roi(scores, roi, image=None,
         ax = plt.gca()
         
     if image is not None: ax.imshow(image)
-    
+
+    if len(scores)==0:
+        return
+
     norm = mpl.colors.Normalize(vmin=scores.min(), vmax=scores.max())
     cmap = cm.RdYlGn
     m = cm.ScalarMappable(norm=norm, cmap=cmap)
