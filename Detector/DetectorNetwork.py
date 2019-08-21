@@ -1,4 +1,6 @@
 
+import AnchorsGenerator
+
 import os, sys, time, datetime, random
 from pathlib import Path
 from warnings import warn
@@ -26,6 +28,17 @@ import torchvision as tv
 from torch import optim
 
 DEVICE = t.device("cuda:0" if t.cuda.is_available() else "cpu")
+
+
+################# MODULE CONTENTS #################
+
+# MAIN: main function to run full experiment of (head-)network training.
+# DATA: API for loading data & labels.
+# NETWORKS: definition of head network, convolutional network and complete network, and basic operations on networks.
+# WRAP-UP & LOSS: from network outputs to loss and ROI.
+# TRAINING: training & validation related stuff.
+# ANALYSIS: analysis and display of training & prediction results.
+# OTHERS
 
 
 ################# MAIN #################
@@ -143,14 +156,15 @@ def get_training_labels(labs_path='labels/anchor_labels_9.pkl', keep_ids=None, v
         print(labels.shape, locations.shape, anchors.shape)
     return labels, locations, anchors
 
-def get_anchors_location_map(anchors, anchors_per_loc=3*3, map_h=135, map_w=240):
+def get_anchors_location_map(anchors, anchors_per_loc=3*3, map_h=135, map_w=240,
+                             H=1080, W=1920, y_off=0, x_off=0):
     anchors_locs_ids = np.where(np.arange(len(anchors)) % anchors_per_loc == 0)[0]
-    y0 = t.from_numpy(0.5 * (anchors[anchors_locs_ids, 0] + anchors[anchors_locs_ids, 2]))
-    x0 = t.from_numpy(0.5 * (anchors[anchors_locs_ids, 1] + anchors[anchors_locs_ids, 3]))
+    y0 = t.from_numpy(0.5 * (anchors[anchors_locs_ids, 0] + anchors[anchors_locs_ids, 2])) + y_off
+    x0 = t.from_numpy(0.5 * (anchors[anchors_locs_ids, 1] + anchors[anchors_locs_ids, 3])) + x_off
     y0 = y0.view(1, 1, map_h, map_w).float()
     x0 = x0.view(1, 1, map_h, map_w).float()
-    y0 = y0 / y0.max()
-    x0 = x0 / x0.max()
+    y0 = y0 / (H-4) # max(y)=H-4 was used for training
+    x0 = x0 / (W-4)
     anchor_locs = t.cat((Variable(y0), Variable(x0)), 1)
     return anchor_locs
 
@@ -206,8 +220,7 @@ class RPN(nn.Module):
             out_channels = int(mid_channels)
 
         if verbose:
-            print(
-                f'Network channels: {in_channels:d} -> {mid_channels if n_mid_layers>1 else "(skipped)"} -> {out_channels:d} -> {(4+1)*n_anchors:d}')
+            print(f'Network channels: {in_channels:d} -> {mid_channels if n_mid_layers>1 else "(skipped)"} -> {out_channels:d} -> {(4+1)*n_anchors:d}')
 
         # standard convolution(s) on top of the input feature-map
         self.conv1 = nn.Conv2d(in_channels, mid_channels, 3, 1, 1) if n_mid_layers > 1 else None
@@ -413,19 +426,11 @@ def RPN_loss(labs, locs, ref_labs, ref_locs, lab_overweight=5, object_overweight
 
     return bg_lab_loss, obj_lab_loss, loc_loss
 
-# ---------------------------------
-# Fast R-CNN
-# Copyright (c) 2015 Microsoft
-# Licensed under The MIT License
-# Written by Ross Girshick
-# ---------------------------------
-# Note: minor modifications were
-#       applied for this project.
-# ---------------------------------
 def nms(dets, scores, thresh=0.5, n_max=None):
     '''
-    dets is a numpy array : num_dets, 4
-    scores ia  nump array : num_dets,
+    This function is based on Microsoft's code by Ross Girshick under MIT License.
+    dets: a numpy array of shape n_dets x 4.
+    scores: a numpy array of length n_dets.
     '''
     y1 = dets[:, 0]
     x1 = dets[:, 1]
@@ -453,6 +458,7 @@ def nms(dets, scores, thresh=0.5, n_max=None):
         order = order[inds + 1]
 
     return keep[:n_max]
+
 
 class linear_constrainer:
     def __init__(self, roi, video=None):
@@ -492,7 +498,7 @@ def regions_of_interest(scores, locs, video=None, constraints=1,
                         min_size=6, max_size=180, thresh=0.3,
                         n_pre_nms=3000, n_post_nms=300, nms_thresh=0.25,
                         loc_fac=None, abs_input=False, verbose=False):
-    
+
     scores = labs_wrap(scores).data.numpy()
     locs = locs_wrap(locs).data.numpy()
 
@@ -536,6 +542,57 @@ def regions_of_interest(scores, locs, video=None, constraints=1,
     if verbose: print('NMS filter:\t', roi.shape, scores.shape)
     
     return roi, scores
+
+
+class Detector:
+
+    def __init__(self,
+                 detect_thresh=0.3, nms_thresh=0.25, constraints_level=1,
+                 use_device=True, Y1=0, X1=0, Y2=1080, X2=1920, **kwargs):
+        # input pre-processing
+        if (Y1!=0 or X1!=0) and constraints_level>0:
+            raise NotImplementedError('Constraints_level > 0 is not supported for X1,Y1>0' + \
+                                      '(i.e. geometrical road-constraints are not supported for shifted image)')
+        map_h = int(ceil((Y2 - Y1) / 8))
+        map_w = int(ceil((X2 - X1) / 8))
+        # ROI parameters
+        self.detect_thresh = detect_thresh
+        self.nms_thresh = nms_thresh
+        self.constraints_level = constraints_level
+        # Model & anchors initialization
+        self.model = get_trained_detector(**kwargs)
+        anchors = AnchorsGenerator.get_anchors(map_h=map_h, map_w=map_w)
+        self.anchor_locs = get_anchors_location_map(
+            anchors, y_off=Y1, x_off=X1, map_h=map_h, map_w=map_w)
+        self.loc_fac = LocationFactory(anchors, H=Y2-Y1, W=X2-X1)
+        if use_device:
+            self.to_device()
+
+    def to_device(self):
+        self.anchor_locs = to_device(self.model, [self.anchor_locs])[0]
+
+    def predict(self, image=None, video=None,
+                thresh=None, nms_thresh=None, constraints=None,
+                with_device=True, clean=True):
+        # configuration
+        if thresh is None:      thresh = self.detect_thresh
+        if nms_thresh is None:  nms_thresh = self.nms_thresh
+        if constraints is None: constraints = self.constraints_level
+        # input conversion
+        X = ims2vars([image])[0]
+        if with_device:
+            X = X.to(DEVICE)
+        # prediction
+        scores, locs = self.model(X, self.anchor_locs)
+        roi, roi_scores = regions_of_interest(
+            scores.cpu(), locs.cpu(),
+            loc_fac=self.loc_fac, video=video,
+            thresh=thresh, nms_thresh=nms_thresh, constraints=constraints
+        )
+        # cleanup
+        if with_device and clean:
+            clean_device([X, scores, locs])
+        return roi, roi_scores
 
 
 ################# TRAINING #################

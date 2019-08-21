@@ -54,17 +54,18 @@ def get_annotations(im_path=Path(r'../annotator/sampled_frames'),
     return data, n, H, W
 
 def get_anchors(anchor_scales=(3,6,12), anchor_ratios=(0.5,1,2),
-                map_h=135, map_w=240, map_cell_size=8):
+                map_h=135, map_w=240, map_cell_size=8, verbose=False):
 
     box_y0 = map_cell_size * np.arange(map_h) + map_cell_size / 2
     box_x0 = map_cell_size * np.arange(map_w) + map_cell_size / 2
     box_center = [(y0, x0) for y0 in box_y0 for x0 in box_x0]
 
     anchors = np.zeros((map_h * map_w * len(anchor_ratios) * len(anchor_scales), 4))
-    print(anchors.shape)
+    if verbose:
+        print(anchors.shape)
 
     index = 0
-    for y0, x0 in tqdm(box_center):
+    for y0, x0 in box_center:
         for ratio in anchor_ratios:
             for scale in anchor_scales:
                 h = map_cell_size * scale * np.sqrt(ratio)
