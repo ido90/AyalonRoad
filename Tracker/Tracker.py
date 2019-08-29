@@ -10,11 +10,11 @@ import numpy as np
 import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from collections import Counter, OrderedDict
+from collections import Counter, OrderedDict, Sequence
 import cv2
 from PIL import Image
 from IPython.display import clear_output
-from sort import *
+from sort import KalmanBoxTracker, Sort
 
 if '../Detector' not in sys.path: sys.path.append('../Detector')
 import DetectorNetwork as dn
@@ -25,9 +25,14 @@ import DetectorNetwork as dn
 ##############################################
 
 # DETECTOR: convert detector outputs to fit this module's needs.
+
 # TRACKER: tracking process (the SORT algorithm itself for associating newly-detected objects with objects from
 #          previous frames is implemented in sort.py from https://github.com/abewley/sort along with few modifications).
+#          - this section is separated into MAIN FUNCTIONS; BASIC TOOLS; and VISUALIZATION TOOLS.
+#          - this section is heavily based on:   https://github.com/cfotache/pytorch_objectdetecttrack
+
 # POST ANALYSIS: post analysis of tracked data.
+
 # STATS & DISPLAY TOOLS: more general tools for basic statistics & display that I really should put in a generic module.
 
 
@@ -35,25 +40,49 @@ import DetectorNetwork as dn
 ############### DETECTOR
 ##############################################
 
-# model = dn.Detector(src='../detector/models/model_14images.mdl', constraints_level=0, Y1=600,Y2=1080,X2=1000)
-def detect(model, image, video=None, clean=True):
-    detections, scores = model.predict(image, video, clean=clean)
+def get_detector(area=None, src='../detector/models/model_15images.mdl', constraints_level=1, **kwargs):
+    x1,x2,y1,y2 = area if area is not None else (0,1920,0,1080)
+    return dn.Detector(src=src, constraints_level=constraints_level, **kwargs,
+                       X1=x1, X2=x2, Y1=y1, Y2=y2)
+
+def set_detector_area(model, area=None, video=None, verbose=False):
+    if area is None and video is not None:
+        area = get_cropped_frame_area(video)
+    x1, x2, y1, y2 = area if area is not None else (0, 1920, 0, 1080)
+    model.set_frame_area_and_anchors(y1, x1, y2, x2, verbose=verbose)
+
+def detect(model, image, video=None, clean=True, return_scores=False, **kwargs):
+    obj_locs, obj_scores, all_scores = model.predict(image, video, clean=clean, **kwargs)
     # (y1,x1,y2,x2),score -> (x1,y1,x2,y2,score,something,type)
-    return np.concatenate((detections[:,[1,0,3,2]],scores[:,np.newaxis],np.ones((len(scores),2))), axis=1)
+    ret = np.concatenate((obj_locs[:,[1,0,3,2]],obj_scores[:,np.newaxis],np.ones((len(obj_scores),2))), axis=1)
+    if return_scores:
+        return ret, all_scores
+    return ret
 
 
 ##############################################
-############### TRACKER
+############### TRACKER (MAIN FUNCTIONS)
 ##############################################
 
-FRAME_AREA = (0,1000,600,1080) # x1,x2,y1,y2
 MAX_TRACKING_SKIPPED_FRAMES = 2
+MIN_HITS_FOR_TRACK = 2
 
-def process_video(model, videopath, area=FRAME_AREA, max_frames=np.Inf, max_age=MAX_TRACKING_SKIPPED_FRAMES,
-                  buffer_cols=100, display=1, title='', to_save=False, verbose=1):
+def process_video(model, videopath, area=None, max_frames=np.Inf, direction_updates=(100,(4,10,20,50)),
+                  max_age=MAX_TRACKING_SKIPPED_FRAMES, min_hits=MIN_HITS_FOR_TRACK,
+                  reset_ids=True, buffer_cols=100, display=1, title='', to_save=False, verbose=1):
+    '''
+    Process a video and generate abstract data describing the cars and their tracks.
+    Returns tracks locations vs. time (X,Y), sizes (S), and number of cars per frame (N).
+    '''
+
     # Initialization
+    video_name = os.path.basename(videopath)
+    if area is not None and not isinstance(area, Sequence) and area:
+        area = get_cropped_frame_area(video_name)
+    if reset_ids:
+        KalmanBoxTracker.count = 0
     video, n_frames = load_video(videopath, max_frames)
-    tracker = Sort(max_age=max_age)
+    tracker = Sort(max_age=max_age, min_hits=min_hits)
     X, Y, S, N = initialize_track_data(n_frames, buffer_cols)
     curr_objs = set()
     n_objs = 0
@@ -62,20 +91,25 @@ def process_video(model, videopath, area=FRAME_AREA, max_frames=np.Inf, max_age=
     T0 = time.time()
     for i in tnrange(n_frames):
 
+        # Update Kalman Filter model
+        if i%direction_updates[0]==direction_updates[0]-1 or i in direction_updates[1]:
+            set_tracker_Q(tracker.trackers, X, Y, verbose=verbose>=2, title=f'Iteration {i+1:d}')
+
         # Read frame
-        frame = read_frame(video, cut_area=area)
+        frame = read_frame(video)
 
         # Detect & track
-        detections = detect(model, frame, clean=(i % 100 == 0 or i == n_frames - 1))
+        detections = detect(model, frame, video=video_name,
+                            clean=(i % 100 == 0 or i == n_frames - 1))
         tracked_objects = tracker.update(detections)
 
         # Update results
-        X, Y, S, n_objs = update_track_data(X, Y, S, N, curr_objs, n_objs,
-                                            tracked_objects, frame, i, n_frames, buffer_cols)
+        X, Y, S, n_objs = update_track_data(X, Y, S, N, curr_objs, n_objs, tracked_objects,
+                                            crop_frame(frame, area), i, n_frames, buffer_cols)
 
         # Update figure
         if display >= 2 or (display >= 1 and i == n_frames-1):
-            draw_frame(frame, i, n_frames, title)
+            draw_frame(crop_frame(frame, area), i, n_frames, title)
 
     # since we allocate many columns in advance, there may be unnecessary ones in the end
     remove_empty_columns(X, Y, S, n_objs)
@@ -86,19 +120,48 @@ def process_video(model, videopath, area=FRAME_AREA, max_frames=np.Inf, max_age=
         print(f'Elapsed time:\t{(time.time()-T0)/60:.1f} [min]')
 
     if to_save:
-        with open(f'track_data/{os.path.basename(videopath)[:-4]:s}.pkl','wb') as f:
-            pkl.dump({'X':X,'Y':Y,'S':S,'N':N,'frame_dim':frame.shape[:2]}, f)
+        with open(f'track_data/{video_name[:-4]:s}.pkl','wb') as f:
+            pkl.dump({'X':X,'Y':Y,'S':S,'N':N,'frame_dim':crop_frame(frame, area).shape[:2]}, f)
 
     return X, Y, S, N
 
 
-def record_video(model, videopath, X, Y, car, frame0=None, area=FRAME_AREA, max_age=MAX_TRACKING_SKIPPED_FRAMES,
-                 boxes=False, dots=True, all_dots=False, self_track=2, extra_frames=0,
-                 display=1, save_frame=None, save_video=None, title=None):
+def visualize_video(model, videopath, X, Y, car, frame0=None, goal_frame=None, set_direction=True,
+                    area=None, max_age=MAX_TRACKING_SKIPPED_FRAMES, min_hits=MIN_HITS_FOR_TRACK,
+                    boxes=False, dots=True, all_active_tracks=False, all_detections=False, show_history_boxes=0,
+                    self_track=2, extra_frames=0, show_scores=False, track_field=None, reset_ids=True, display=1,
+                    base_path=Path('../Outputs/Tracker'), save_frame=None, save_video=None, title=None,
+                    verbose=1):
+    '''
+    Process a video around a specific vehicle for visualization purposes.
+    Note: the video must be already-processed by process_video() (that's where X,Y arguments arrive from).
+    Note: visualizations can be plotted, saved as PNG or saved as MP4.
+
+    :param X,Y: the location data generated by process_video()
+    :param car: vehicle's number (as a string) in X,Y
+    :param frame0: beginning of processing
+    :param goal_frame: frame to show / save as image
+    :param boxes: show tracked objects as boxes (with numbers)
+    :param dots: show tracked objects centers as dots
+    :param all_active_tracks: show all active trackers (even those that were not assigned to any detected object in the current frame)
+    :param all_detections: show all detected objects (even new ones that don't have a tracker yet)
+    :param self_track: draw car's location in adjacent frames (showing a track of +-self_track)
+    :param extra_frames: number of frames to process after car gets out of the frame
+    :param show_scores: draw the scores of all the anchor boxes
+    :param track_field: draw tracker probabilistic-field (which is used for detection<->tracker assignment); track_field has to be the index of the tracker
+    :param show_history_boxes: number of previous car's boxes to draw
+    :param display: 0 = none; 1 = only goal-frame; 2 = all frames in relevant range
+    :param save_frame: image name (without suffix)
+    :param save_video: video name (without suffix)
+    '''
 
     # Initialization
+    if reset_ids:
+        KalmanBoxTracker.count = 0
     video, n_frames = load_video(videopath)
-    tracker = Sort(max_age=max_age)
+    tracker = Sort(max_age=max_age, min_hits=min_hits)
+    if set_direction:
+        set_tracker_Q(tracker.trackers, X, Y, verbose=verbose>=2)
     if save_video is not None:
         frames_array = []
 
@@ -109,62 +172,92 @@ def record_video(model, videopath, X, Y, car, frame0=None, area=FRAME_AREA, max_
     if frame0 not in car_appearance:
         print(f'Note: frame {frame0:d} does not include car {car}, assuming relative frame number.')
         frame0 = car_appearance[0] + frame0
+    if goal_frame is None:
+        goal_frame = frame0
 
     # Skip to interesting frames (start a little before frame0 to allow valid tracking process)
-    if frame0 > 5:
-        read_frame(video, skip=frame0-5)
+    video.set(cv2.CAP_PROP_POS_FRAMES, max(frame0-5,0))
 
     # Process frames
-    for i in range(max(frame0-5,0), max(car_appearance[-1],frame0+extra_frames)):
+    ti = max(frame0-5, 0)
+    tf = max(car_appearance[-1],goal_frame) + extra_frames
+    if verbose >=2:
+        print('Total frames:', tf-ti)
+    for i in range(ti, tf+1):
 
         # Process frame
-        frame = read_frame(video, cut_area=area)
-        detections = detect(model, frame, clean=(i % 100 == 0 or i == frame0-1))
+        frame = read_frame(video)
+        detections = detect(model, frame, video=os.path.basename(videopath), return_scores=show_scores,
+                            clean=(i % 100 == 0 or i == tf))
+        if show_scores:
+            all_scores = detections[1]
+            detections = detections[0]
         tracked_objects = tracker.update(detections)
 
-        # Mark whatever we want on the frame
+        # Draw whatever we want in the frame
+        frame = crop_frame(frame, area)
+        if all_detections:
+            for x1, y1, x2, y2, _, _, _ in detections:
+                mark_object_on_frame(frame, y1, x1, y2-y1, x2-x1, 1,
+                                     boxes=False, dots=True, color=(0,200,0))
+
+        if all_active_tracks:
+            for t in tracker.trackers:
+                x1, y1 = t.kf.x.transpose()[0][:2]
+                mark_object_on_frame(frame, y1-1, x1-1, 2, 2, t.id+1,
+                                     boxes=False, dots=True, color=(139,69,19))
+
         for x1, y1, x2, y2, obj_id, _ in tracked_objects:
             mark_object_on_frame(frame, y1, x1, y2-y1, x2-x1, obj_id, boxes, dots)
 
-        if all_dots:
-            for t in tracker.trackers:
-                x1, y1 = t.kf.x.transpose()[0][:2]
-                mark_object_on_frame(frame, y1-1, x1-1, 2, 2, t.id+1, False, True)
-
         if self_track:
-            for i in range(max(i-self_track,0), i+self_track+1):
-                if i in car_appearance:
-                    mark_object_on_frame(frame, Y.loc[i,car]-1, frame.shape[1]-(X.loc[i,car]-1), 2, 2, 0,
-                                         False, True, (0,0,0))
+            for j in np.arange(max(i-self_track,0), i+self_track+1):
+                if j in car_appearance:
+                    mark_object_on_frame(frame, Y.loc[j,car]-1, frame.shape[1]-(X.loc[j,car]-1), 2, 2, 0,
+                                         False, True, (200,0,0))
+
+        # Update figure
+        if display >= 2 or (display >= 1 and i == goal_frame-1):
+            track_field_dict = None
+            if track_field:
+                i_track = np.where(np.array([t.id for t in tracker.trackers]) == int(track_field-1))[0]
+                if show_history_boxes and len(i_track) > 0:
+                    h = tracker.trackers[i_track[0]].history
+                    for bk in range(1,min(show_history_boxes+1,len(h))):
+                        mark_object_on_frame(frame, h[-bk][0,1], h[-bk][0,0], h[-bk][0,3]-h[-bk][0,1], h[-bk][0,2]-h[-bk][0,0],
+                                             int(track_field), 1, 0)
+                track_field_dict = {'track': tracker.trackers[i_track[0]],
+                                    'locs': model.anchor_locs, 'thresh': 1e-3,
+                                    'x_off': area[0], 'y_off': area[2]} \
+                    if len(i_track)>0 else None
+            draw_frame(
+                frame, i, n_frames, title, (16,8), persistent=display>=3, track_field=track_field_dict,
+                scores={'locs':model.anchor_locs,'scores':all_scores,'area':area} if show_scores else None
+            )
 
         # Update recorded video
         if save_video is not None:
-            frames_array.append(frame)
+            frames_array.append(cv2.cvtColor(frame,cv2.COLOR_RGB2BGR))
 
-        # Update figure
-        if display >= 2 or (display >= 1 and i == frame0-1):
-            draw_frame(frame, i, min(5,frame0), title, (16,8))
-
-        # Stop if we got past all the car's appearances in the video
-        if np.all([car_frame < i-extra_frames for car_frame in car_appearance]):
-            break
-
-        # Save frame0
-        if i==frame0 and save_frame is not None:
-            cv2.imwrite(str(save_frame) + '.png', frame)
+        # Save goal frame
+        if i==goal_frame-1 and save_frame is not None:
+            cv2.imwrite(str(base_path/(save_frame+'.png')), cv2.cvtColor(frame,cv2.COLOR_RGB2BGR))
 
     # Save video
     if save_video is not None:
-        out = cv2.VideoWriter(str(save_video)+'.mp4', cv2.VideoWriter_fourcc(*'XVID'), 4, (frame.shape[1], frame.shape[0]))
-        # out = cv2.VideoWriter(to_save + '.avi', cv2.VideoWriter_fourcc(*'DIVX'), 15, (frame.shape[1], frame.shape[0]))
+        out = cv2.VideoWriter(str(base_path/(save_video+'.mp4')), cv2.VideoWriter_fourcc(*'XVID'), 4, (frame.shape[1], frame.shape[0]))
         for im in frames_array:
             out.write(im)
         out.release()
 
 
+##############################################
+############### TRACKER (BASIC TOOLS)
+##############################################
+
 def load_video(videopath, max_frames=np.Inf, verbose=False):
     video = cv2.VideoCapture(videopath)
-    n_frames = video.get(cv2.CAP_PROP_FRAME_COUNT)
+    n_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
     if verbose:
         print(f'Frames in video: {n_frames:d}')
     if max_frames < n_frames:
@@ -173,15 +266,53 @@ def load_video(videopath, max_frames=np.Inf, verbose=False):
             print(f'max_frames = {max_frames:d} < n_frames')
     return video, n_frames
 
-def read_frame(video, skip=0, cut_area=None):
+def read_frame(video, skip=0, cut_area=None, to_rgb=True, verbose=False):
+    if verbose and skip > 0:
+        print(f'Skipping {skip:d} frames.')
     for _ in range(skip):
+        # Note: it's apparently possible to do it more elegantly using
+        #       cap.set(cv2.CAP_PROP_POS_FRAMES, skip).
         video.read()
     _, frame = video.read()
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    if to_rgb:
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     if cut_area is not None:
-        # x1,x2,y1,y2
-        frame = frame[cut_area[2]:cut_area[3], cut_area[0]:cut_area[1], :]
+        frame = crop_frame(frame, cut_area)
     return frame
+
+def get_cropped_frame_area(video):
+    # x1,x2,y1,y2
+    return (0, 1050, 450, 900) if video<'20190525_2000' else \
+        (0, 1000, 240, 480) if video<'20190526_1200' else (0, 1000, 600, 1080)
+
+def crop_frame(frame, cut_area=None):
+    # x1,x2,y1,y2
+    return frame if cut_area is None else frame[cut_area[2]:cut_area[3], cut_area[0]:cut_area[1], :]
+
+def set_tracker_Q(tracks, X, Y, sx=10., sy=2., min_data_len=5, verbose=False, title=None):
+    '''
+    Find the driving direction, and set the covariance-matrix to express
+    uncertainty sx in this direction and sy in the orthogonal direction.
+    '''
+    Q0 = np.array(((sx**2,0),(0,sy**2)))
+    X = np.array(-X.diff(axis=0)).flatten()
+    Y = np.array(Y.diff(axis=0)).flatten()
+    X = X[np.logical_not(np.isnan(X))]
+    Y = Y[np.logical_not(np.isnan(Y))]
+    if len(X) < min_data_len:
+        return
+    u = np.array((X.mean(), Y.mean()))
+    KalmanBoxTracker.v0 = u
+    speed = np.linalg.norm(u)
+    u = u / speed
+    if verbose:
+        print((f'[{title:s}] ' if title else '') + 'Average speed and direction:', speed, u)
+    U = np.array((u,(u[1],-u[0]))).transpose()
+    Q = U.transpose() @ Q0 @ U
+    KalmanBoxTracker.Q22 = Q
+    for t in tracks:
+        t.kf.Q[:2,:2] = Q
+        t.kf.Q[4:6,4:6] = Q
 
 def initialize_track_data(n_frames, buffer_cols=100):
     X = pd.DataFrame(None, index=list(range(n_frames)), columns=list(range(buffer_cols)), dtype=np.float)
@@ -195,7 +326,14 @@ def expand_df(df, n_cols):
         None, index=list(range(df.shape[0])), columns=list(range(df.shape[1], df.shape[1] + n_cols)), dtype=np.float
     )), axis=1)
 
-def update_track_data(X, Y, S, N, curr_objs, n_objs, tracked_objects, frame, i_frame, n_frames, buffer_cols=100):
+def remove_empty_columns(X, Y, S, n_objs):
+    if n_objs < X.shape[1]:
+        X.drop(columns=list(range(n_objs, X.shape[1])), inplace=True)
+        Y.drop(columns=list(range(n_objs, Y.shape[1])), inplace=True)
+        S.drop(columns=list(range(n_objs, S.shape[1])), inplace=True)
+
+def update_track_data(X, Y, S, N, curr_objs, n_objs, tracked_objects, frame, i_frame, n_frames,
+                      buffer_cols=100, reverse_x=True):
     N[i_frame] = len(tracked_objects)
     for x1, y1, x2, y2, obj_id, _ in tracked_objects:
         box_h = y2 - y1
@@ -215,19 +353,18 @@ def update_track_data(X, Y, S, N, curr_objs, n_objs, tracked_objects, frame, i_f
             Y.rename(columns={n_objs: col_nm}, inplace=True)
             S.rename(columns={n_objs: col_nm}, inplace=True)
             n_objs += 1
-        X.loc[i_frame, col_nm] = frame.shape[1] - (x1 + box_w / 2)
+        X.loc[i_frame, col_nm] = frame.shape[1] - (x1+box_w/2) if reverse_x else x1+box_w/2
         Y.loc[i_frame, col_nm] = y1 + box_h / 2
-        S.loc[i_frame, col_nm] = np.sqrt(box_w ** 2 + box_h ** 2)
+        S.loc[i_frame, col_nm] = np.sqrt(box_w**2 + box_h**2)
 
         mark_object_on_frame(frame, y1, x1, box_h, box_w, obj_id)
 
     return X, Y, S, n_objs
 
-def remove_empty_columns(X, Y, S, n_objs):
-    if n_objs < X.shape[1]:
-        X.drop(columns=list(range(n_objs, X.shape[1])), inplace=True)
-        Y.drop(columns=list(range(n_objs, Y.shape[1])), inplace=True)
-        S.drop(columns=list(range(n_objs, S.shape[1])), inplace=True)
+
+##############################################
+############### TRACKER (VISUALIZATION TOOLS)
+##############################################
 
 def mark_object_on_frame(frame, y1, x1, h, w, obj_id, boxes=True, dots=False, color=None):
     y1, x1, h, w, obj_id = int(y1), int(x1), int(h), int(w), int(obj_id)
@@ -242,29 +379,76 @@ def mark_object_on_frame(frame, y1, x1, h, w, obj_id, boxes=True, dots=False, co
     if dots:
         cv2.rectangle(frame, (int(x1+w/2), int(y1+h/2)), (int(x1+w/2+1), int(y1+h/2+1)), color, 4)
 
+def pred_prob(track, x, y, cell_size=8):
+    '''
+    Get probability map of predicted track being at locations (x,y).
+    Assuming multivariate Gaussian according to tracker covariance matrix P.
+    '''
+    if np.all(track.kf.P_prior==np.eye(7)):
+        # first step - x_prior, P_prior are not initialized yet
+        MU = track.kf.x[:2,0]
+        SIGMA = track.kf.P[:2, :2]
+    else:
+        MU = track.kf.x_prior[:2,0]
+        SIGMA = track.kf.P_prior[:2,:2]
+
+    A = 1/((2*np.pi)*np.sqrt(np.linalg.det(SIGMA))) * cell_size**2
+
+    # This can probably be done more efficiently using tensors operations instead of list comprehension
+    return np.array([A * np.exp(-0.5 * ((np.array((xx,yy))-MU) @ np.linalg.inv(SIGMA) @ (np.array((xx,yy))-MU)) )
+                     for xx,yy in zip(x,y) ])
+
+def show_object_probabilistic_field(track, anchor_locs, thresh=1e-3, x_off=0, y_off=0, W=1920-4, H=1080-4):
+    x = anchor_locs.cpu().data[0,1,:,:].flatten() * W - x_off
+    y = anchor_locs.cpu().data[0,0,:,:].flatten() * H - y_off
+    p = pred_prob(track, x, y)
+    ids = np.where(p >= thresh)[0]
+    x, y, p = x[ids], y[ids], p[ids]
+    # color scheme & plot
+    cm = plt.cm.get_cmap('RdYlGn')
+    sc = plt.scatter(x=x, y=y, c=p, s=2, alpha=0.5,
+                    cmap=cm, vmin=thresh, vmax=p.max() if len(p)>0 else 1)
+    cbar = plt.colorbar(sc, ax=plt.gca())
+    cbar.ax.set_ylabel(f'Car ID: {track.id+1:d}')
+    # show previous locations
+    for step_back in range(1,4):
+        if len(track.history) >= step_back+1:
+            plt.plot((track.history[-1-step_back][0, 0] + track.history[-1-step_back][0, 2]) / 2,
+                     (track.history[-1-step_back][0, 1] + track.history[-1-step_back][0, 3]) / 2,
+                     '.', color='saddlebrown' if step_back>1 else 'black', markersize=15, alpha=1)#0.7)
+
+def draw_frame(frame, i=None, n_frames=None, title='', figsize=(12, 8),
+               persistent=False, scores=None, track_field=None, lock=True):
+    plt.figure(figsize=figsize)
+    tit = f"Frame {i+1:d}/{n_frames:.0f} ({100*(i+1)/n_frames:.0f}%)" if i is not None and n_frames is not None else ''
+    tit = title + ': ' + tit if title else tit
+    plt.title(tit)
+    plt.imshow(frame)
+    if scores is not None:
+        dn.show_pred_map(scores['scores'], scores['locs'], ax=plt.gca(), logscale=True, vmin=-4,
+                         size=4, alpha=0.8, x_off=scores['area'][0], y_off=scores['area'][2])
+    if track_field is not None:
+        show_object_probabilistic_field(track_field['track'], track_field['locs'], track_field['thresh'],
+                                        track_field['x_off'], track_field['y_off'])
+    if lock:
+        plt.show()
+    if not persistent:
+        clear_output(wait=True)
+
 
 ##############################################
 ############### POST ANALYSIS
 ##############################################
 
-def draw_frame(frame, i=None, n_frames=None, title='', figsize=(12, 8)):
-    plt.figure(figsize=figsize)
-    tit = f"Frame {i+1:d}/{n_frames:d} ({100*(i+1)/n_frames:.0f}%)" if i is not None and n_frames is not None else ''
-    tit = title + ': ' + tit if title else tit
-    plt.title(tit)
-    plt.imshow(frame)
-    plt.show()
-    clear_output(wait=True)
-
-def set_track_figure(area=FRAME_AREA, ax=None):
+def set_track_figure(area=None, ax=None):
     if ax is None:
         ax = plt.gca()
     if area is None:
         ax.set_xlim(0,1920)
         ax.set_ylim(0,1080)
     else:
-        ax.set_xlim((area[1], area[0]))
-        ax.set_ylim((area[3], area[2]))
+        ax.set_xlim((0, area[1]-area[0]))
+        ax.set_ylim((0, area[3]-area[2]))
     ax.invert_xaxis()
     ax.invert_yaxis()
     ax.grid()
@@ -277,28 +461,48 @@ def plot_track(X, Y, car, ax=None):
     ax.plot(X.loc[t0, car], Y.loc[t0, car], 's', color=colors[int(car) % len(colors)])
     ax.plot(X.loc[:, car], Y.loc[:, car], '.-', color=colors[int(car) % len(colors)], label=car)
 
-def cars_per_frame_sanity(df, N, FPS=30/8, ax=None, verbose=1):
-    N_alt = [np.sum(np.logical_and(df.t0 <= t, t <= df.t0 + df.dt)) for t in np.arange(len(N))/FPS]
-    l1_diff = np.sum(np.abs(np.array(N_alt)-np.array(N)))
-    if verbose >= 1:
-        print(f'Cars per frame - count per frame vs. count per car - L1-difference:\t{l1_diff:.0f}')
-    if verbose >= 2:
+def cars_per_frame_sanity(df, N, FPS=30/8, ax=None, plot=True):
+    print(f'Total number of detections:\t{df.n_shots.sum():d}')
+    print(f'Number of frames:\t{len(N):d}')
+    print(f'Number of detected cars:\t{len(df):d}')
+    print(f'Total detections inconsistency:\t{np.abs(N.sum()-df.n_shots.sum()):.0f}')
+    print(f'Detections per car:\t{df.n_shots.sum()/len(df):.1f}')
+    print(f'Detections per frame:\t{N.sum()/len(N):.1f}')
+    N_cars_present = [np.sum(np.logical_and(df.t0 <= t, t <= df.t0 + df.dt)) for t in np.arange(len(N))/FPS]
+    cars_undetected = np.maximum(np.array(N_cars_present) - np.array(N), 0)
+    cars_untracked = np.maximum(np.array(N) - np.array(N_cars_present), 0)
+    print(f'Skipped car-frames:\t{cars_undetected.sum():.0f} ({cars_undetected.sum()/len(df):.1f} per car, {cars_undetected.mean():.1f} per frame)')
+    print(f'Cars untracked:\t{cars_untracked.sum():.0f} ({cars_untracked.mean():.1f} per frame)')
+    if plot:
         if ax is None:
-            _, ax = plt.subplots(1,1, figsize=(10,4))
-        ax.plot(np.arange(len(N)), N,     'b.-', label='Count per frame')
-        ax.plot(np.arange(len(N)), N_alt, 'r.-', label='Count per car')
+            _, ax = plt.subplots(1,1, figsize=(16,4))
+        ax.plot(np.arange(len(N)), N,              'b-', label='Detected in frame')
+        ax.plot(np.arange(len(N)), N_cars_present, 'r-', label='Detected around frame')
         ax.set_xlabel('Frame')
-        ax.set_ylabel('Number of detected cars')
+        ax.set_ylabel('Number of cars')
         ax.grid()
         ax.legend()
-    return N_alt
 
 def get_cars_direction(df):
     slope = np.median((df.dy/df.dx).dropna())
     return slope
 
+def px2m(x, x_off=0):
+    '''
+    Pixels to meters.
+    Based on linear fit from location to size in an image.
+    :param x: (horizontal) location in the image.
+    :param x_off: offset of the location (intended for cropped images).
+    :return: approximated number of pixels per meter in that location in the image.
+    '''
+    car_len = 60.76357 - 0.029524*(x+x_off) # ~4.5m
+    single_meter = car_len / 4.5
+    return single_meter
 
-def summarize_video(X, Y, S, W, H, video, FPS=30/8, videos_metadata=r'../Photographer/videos_metadata.csv',
+
+def summarize_video(X, Y, S, W, H, video, videos_metadata=r'../Photographer/videos_metadata.csv',
+                    FPS=30/8, negative_motion_threshold=0.04,
+                    short_path_threshold=0.6, # in certain frames the maximum is 0.7-0.8 due to a hiding bridge in the beginning
                     to_save=True, verbose=True):
     vdf = pd.read_csv(videos_metadata, index_col=0)
     df = pd.DataFrame(index=X.columns)
@@ -323,8 +527,8 @@ def summarize_video(X, Y, S, W, H, video, FPS=30/8, videos_metadata=r'../Photogr
                           Y.loc[Y[car].notnull(),car].diff()[1:].abs().sum()
                           if Y.loc[Y[car].notnull(),car].diff()[1:].abs().sum()>0 else 0
                           for car in Y.columns]
-    df['valid_x_dir'] = df['neg_x_motion'] < 0.04
-    df['valid_y_dir'] = df['neg_y_motion'] < 0.04
+    df['valid_x_dir'] = df['neg_x_motion'] < negative_motion_threshold
+    df['valid_y_dir'] = df['neg_y_motion'] < negative_motion_threshold
     df['min_x'] = X.min()
     df['max_x'] = X.max()
     df['min_y'] = Y.min()
@@ -335,7 +539,7 @@ def summarize_video(X, Y, S, W, H, video, FPS=30/8, videos_metadata=r'../Photogr
     df['dy'] = df.max_y - df.min_y
     df['x_path_rel'] = df.dx/W
     df['y_path_rel'] = df.dy/H
-    df['long_path'] = df['x_path_rel'] > 0.3
+    df['long_path'] = df['x_path_rel'] > short_path_threshold
     df['v'] = np.sqrt(df.dx.pow(2)+df.dy.pow(2))/df.dt # [pixels / sec]
     df['abs_v'] = [np.sum( np.power( np.power(np.diff(X[car][X[car].notnull()]),2) +
                                     np.power(np.diff(Y[car][Y[car].notnull()]),2), 0.5 ) ) /
@@ -349,7 +553,7 @@ def summarize_video(X, Y, S, W, H, video, FPS=30/8, videos_metadata=r'../Photogr
         print('Data frame shape: ', df.shape)
 
     if to_save:
-        df.to_csv(f'track_data/{video[:-4]:s}.csv')
+        df.to_csv(f'track_data/{video[:-4]:s}.csv', index_label='car')
 
     return df
 

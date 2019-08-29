@@ -1,17 +1,15 @@
+__pycache__
 .ipynb_checkpoints/
 .idea/
 
-__pycache__
 trash/
 Notes/
 Data/
 Photographer/Data/
-Tracker/config
-Tracker/images
-Tracker/tracking_demo_data
-Tracker/backup
 Annotator/via-3.0.4
 Annotator/sampled_frames
 Detector/labels/
 Detector/experiments/
 Detector/tmp/
+Tracker/track_data
+Tracker/tmp

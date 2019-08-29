@@ -35,7 +35,7 @@ DEVICE = t.device("cuda:0" if t.cuda.is_available() else "cpu")
 # MAIN: main function to run full experiment of (head-)network training.
 # DATA: API for loading data & labels.
 # NETWORKS: definition of head network, convolutional network and complete network, and basic operations on networks.
-# WRAP-UP & LOSS: from network outputs to loss and ROI.
+# WRAP-UP & LOSS: from network outputs to loss and ROI, including NMS, geometrical constraints and the final Detector object.
 # TRAINING: training & validation related stuff.
 # ANALYSIS: analysis and display of training & prediction results.
 # OTHERS
@@ -195,7 +195,7 @@ def get_video_frame(video, i_frame=None, pth=Path(r'D:\Media\Videos\Ayalon')):
         i_frame = np.random.randint(0, int(cap.get(cv2.CAP_PROP_FRAME_COUNT)))
     cap.set(cv2.CAP_PROP_POS_FRAMES, i_frame)
     _, frame = cap.read()
-    return frame[:, :, 2::-1]
+    return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
 
 ################# NETWORKS #################
@@ -299,12 +299,15 @@ def get_resnet_conv_model(n_layers=6, pretrained=True):
     conv = nn.Sequential(*list(resnet.children())[:n_layers])
     return conv
 
-def ims2vars(images, normalize=True, verbose=0):
+def ims2vars(images, normalize=True, cut_area=None, verbose=0):
     inputs = []
     for i,image in enumerate(images):
         X = t.Tensor(t.tensor(np.array(image)).unsqueeze(0).permute(0,3,1,2).type('torch.FloatTensor'))
         if normalize:
             X = normalize_images(X, inline=True, verbose=(verbose>=2 or (verbose>=1 and i==0)))
+        if cut_area is not None:
+            # y1,x1,y2,x2
+            X = X[:,:,cut_area[0]:cut_area[2],cut_area[1]:cut_area[3]]
         X = Variable(X)
         inputs.append(X)
     return inputs
@@ -342,17 +345,18 @@ def add_location_to_features(features, anchors, anchors_per_location=3*3, verbos
         
     return features
 
-def get_trained_detector(src='models/model_14images.mdl', set_eval=True,
-                         head_src='models/head_14images.mdl', only_trained_head=False):
+def get_trained_detector(src='models/model_15images.mdl', set_eval=True,
+                         head_src='models/head_15images.mdl', only_trained_head=False,
+                         verbose=False):
     conv = get_resnet_conv_model()
-    head = RPN(in_channels=128, loc_features=True, verbose=False)
+    head = RPN(in_channels=128, loc_features=True, verbose=verbose)
     model = DetectionNetwork(conv, head)
     if only_trained_head:
         head.load_state_dict(t.load(head_src))
     else:
         model.load_state_dict(t.load(src))
     if set_eval:
-        set_grad(model, 0, verbose=False)
+        set_grad(model, 0, verbose=verbose)
         model.eval()
     return model
 
@@ -461,10 +465,10 @@ def nms(dets, scores, thresh=0.5, n_max=None):
 
 
 class linear_constrainer:
-    def __init__(self, roi, video=None):
+    def __init__(self, roi, video=None, y_off=0, x_off=0):
         # roi = (y1, x1, y2, x2)
-        self.y = 0.5 * (roi[:, 0] + roi[:, 2])
-        self.x = 0.5 * (roi[:, 1] + roi[:, 3])
+        self.y = 0.5 * (roi[:, 0] + roi[:, 2]) + y_off
+        self.x = 0.5 * (roi[:, 1] + roi[:, 3]) + x_off
         self.video = video
     def linear_constraint(self, b, a, c, s=1):
         return s * (a*self.x + b*self.y + c) >= 0
@@ -493,8 +497,16 @@ class linear_constrainer:
         else:
             return ((1,1/2.27,-840,1), (1,1/2.95,-1050,-1), (1,0,-180,1), (0,1,-1770,-1)) + \
                    (((1,-0.4,-100,1),) if stricter else tuple())
+    def plot_constraints(self, epoch=None, y_off=0, x_off=0, x1=0, x2=1920, ax=None):
+        if ax is None:
+            plt.figure()
+            ax = plt.axes()
+        coef = self.get_coefficients(epoch, True)
+        x = np.linspace(x1, x2, 10)
+        for c in coef:
+            ax.plot(x, -(c[1]*(x-x_off)+c[2])/c[0]-y_off, 'm--')
 
-def regions_of_interest(scores, locs, video=None, constraints=1,
+def regions_of_interest(scores, locs, video=None, constraints=1, y_off=0, x_off=0,
                         min_size=6, max_size=180, thresh=0.3,
                         n_pre_nms=3000, n_post_nms=300, nms_thresh=0.25,
                         loc_fac=None, abs_input=False, verbose=False):
@@ -511,7 +523,7 @@ def regions_of_interest(scores, locs, video=None, constraints=1,
     if verbose: print('Low score filter:\t', roi.shape, scores.shape)
 
     if constraints >= 1:
-        constrainer = linear_constrainer(roi, video)
+        constrainer = linear_constrainer(roi, video, y_off=y_off, x_off=x_off)
         if video is None:
             # use the union of the valid-zones from all the date-windows
             valid_locs = reduce(
@@ -547,26 +559,39 @@ def regions_of_interest(scores, locs, video=None, constraints=1,
 class Detector:
 
     def __init__(self,
-                 detect_thresh=0.3, nms_thresh=0.25, constraints_level=1,
-                 use_device=True, Y1=0, X1=0, Y2=1080, X2=1920, **kwargs):
-        # input pre-processing
-        if (Y1!=0 or X1!=0) and constraints_level>0:
-            raise NotImplementedError('Constraints_level > 0 is not supported for X1,Y1>0' + \
-                                      '(i.e. geometrical road-constraints are not supported for shifted image)')
-        map_h = int(ceil((Y2 - Y1) / 8))
-        map_w = int(ceil((X2 - X1) / 8))
+                 detect_thresh=0.3, nms_thresh=0.2, constraints_level=1,
+                 use_device=True, Y1=0, X1=0, Y2=1080, X2=1920, verbose=0, **kwargs):
+        self.verbose = verbose
+        # Anchors initialization
+        self.set_frame_area_and_anchors(Y1,X1,Y2,X2, verbose=verbose)
+        # TODO REMOVE commented out code
+        # self.Y1, self.X1, self.Y2, self.X2 = Y1, X1, Y2, X2
+        # self.cut_area = [self.Y1, self.X1, self.Y2, self.X2]
+        # map_h = int(ceil((self.Y2 - self.Y1) / 8))
+        # map_w = int(ceil((self.X2 - self.X1) / 8))
         # ROI parameters
         self.detect_thresh = detect_thresh
         self.nms_thresh = nms_thresh
         self.constraints_level = constraints_level
-        # Model & anchors initialization
-        self.model = get_trained_detector(**kwargs)
-        anchors = AnchorsGenerator.get_anchors(map_h=map_h, map_w=map_w)
-        self.anchor_locs = get_anchors_location_map(
-            anchors, y_off=Y1, x_off=X1, map_h=map_h, map_w=map_w)
-        self.loc_fac = LocationFactory(anchors, H=Y2-Y1, W=X2-X1)
+        # Model
+        self.model = get_trained_detector(**kwargs, verbose=verbose)
+        # anchors = AnchorsGenerator.get_anchors(map_h=map_h, map_w=map_w, verbose=verbose)
+        # self.anchor_locs = get_anchors_location_map(
+        #     anchors, y_off=self.Y1, x_off=self.X1, map_h=map_h, map_w=map_w)
+        # self.loc_fac = LocationFactory(anchors, H=self.Y2-self.Y1, W=self.X2-self.X1)
         if use_device:
             self.to_device()
+
+    def set_frame_area_and_anchors(self, Y1=0, X1=0, Y2=1080, X2=1920, verbose=0):
+        self.Y1, self.X1, self.Y2, self.X2 = Y1, X1, Y2, X2
+        self.cut_area = [self.Y1, self.X1, self.Y2, self.X2]
+        map_h = int(ceil((self.Y2 - self.Y1) / 8))
+        map_w = int(ceil((self.X2 - self.X1) / 8))
+        # Model & anchors initialization
+        anchors = AnchorsGenerator.get_anchors(map_h=map_h, map_w=map_w, verbose=verbose)
+        self.anchor_locs = get_anchors_location_map(
+            anchors, y_off=self.Y1, x_off=self.X1, map_h=map_h, map_w=map_w)
+        self.loc_fac = LocationFactory(anchors, H=self.Y2-self.Y1, W=self.X2-self.X1)
 
     def to_device(self):
         self.anchor_locs = to_device(self.model, [self.anchor_locs])[0]
@@ -579,20 +604,21 @@ class Detector:
         if nms_thresh is None:  nms_thresh = self.nms_thresh
         if constraints is None: constraints = self.constraints_level
         # input conversion
-        X = ims2vars([image])[0]
+        X = ims2vars([image], cut_area=self.cut_area, verbose=self.verbose)[0]
         if with_device:
             X = X.to(DEVICE)
         # prediction
         scores, locs = self.model(X, self.anchor_locs)
+        scores_ret = scores.cpu()
         roi, roi_scores = regions_of_interest(
-            scores.cpu(), locs.cpu(),
-            loc_fac=self.loc_fac, video=video,
-            thresh=thresh, nms_thresh=nms_thresh, constraints=constraints
+            scores_ret, locs.cpu(),
+            loc_fac=self.loc_fac, video=video, y_off=self.Y1, x_off=self.X1,
+            thresh=thresh, nms_thresh=nms_thresh, constraints=constraints, verbose=self.verbose,
         )
         # cleanup
         if with_device and clean:
             clean_device([X, scores, locs])
-        return roi, roi_scores
+        return roi, roi_scores, scores_ret.data
 
 
 ################# TRAINING #################
@@ -731,7 +757,7 @@ def train_model(model, optimizer,
             clean_device([X, loss, tmp_labs, tmp_locs])
             # display
             if plot_freq and (iter_count%plot_freq==0 or iter_count+1==len(i_train)*epochs):
-                show_preds(scores[i], locs, loc_fac, anchors, images[i], ax=axs[iter_count // plot_freq, 0],
+                show_preds(scores[i], locs, loc_fac, anchors, images[i], ax=axs[ceil(iter_count/plot_freq), 0],
                            title=f'Iteration {e+1:d}.{ii+1:d}/{epochs:d}.{len(i_train):d}: Train Image')
 
             # validate
@@ -801,16 +827,16 @@ def preds2boxes(labs, locs, loc_fac, thresh=0.5, abs_locs=False):
 
 def show_preds(labs, locs, loc_fac, anchors=None, image=None, thresh=0.5, abs_locs=False,
                n_display=150, ax=None, fsize=(8,5), title=''):
-    
+
     labs = labs_wrap(labs)
     locs = locs_wrap(locs)
-    
+
     if ax is None:
         plt.figure(figsize=fsize)
         ax = plt.gca()
-        
+
     if image is not None: ax.imshow(image)
-    
+
     if thresh > labs.max():
         print(f'[{title:s}] No scores above threshold. Largest score: {labs.max():.3f}/{thresh:.3f}')
     thresh = thresh if thresh<=labs.max() else 0.9*labs.max().cpu().data.numpy()
@@ -819,7 +845,7 @@ def show_preds(labs, locs, loc_fac, anchors=None, image=None, thresh=0.5, abs_lo
     norm = mpl.colors.Normalize(vmin=scrs.min(), vmax=scrs.max())
     cmap = cm.RdYlGn
     m = cm.ScalarMappable(norm=norm, cmap=cmap)
-    
+
     for i in range(min(len(bxs),n_display)):
         if anchors is not None:
             ax.add_patch(mpl.patches.Rectangle((anchors[i,1],anchors[i,0]), (anchors[i,3]-anchors[i,1]), (anchors[i,2]-anchors[i,0]),
@@ -830,8 +856,45 @@ def show_preds(labs, locs, loc_fac, anchors=None, image=None, thresh=0.5, abs_lo
                                            label='Predicted location (red <= certainty <= green)' if i==0 else None))
 
     ax.set_title(title+f'\n(a sample of {min(len(bxs),n_display):d}/{len(bxs):d} boxes with score>{thresh:.3f})')
-    #plt.colorbar(m, ax=ax)
     ax.legend()
+
+def show_pred_map(scores, anchor_locs, image=None, y_off=0, x_off=0, y_norm=1080, x_norm=1920,
+                  thresh=0, logscale=False, vmin=None, size=2, alpha=0.5,
+                  ax=None, fsize=(8, 5), title=''):
+
+    # gpu -> cpu
+    anchor_locs = anchor_locs.cpu().data.numpy()
+    scores = scores.cpu().data.numpy()
+
+    # reshape
+    y = anchor_locs[:,0,:,:].flatten()
+    x = anchor_locs[:,1,:,:].flatten()
+    scores = np.max(scores, axis=1).flatten()
+
+    # filter by score threshold
+    ids = scores >= thresh
+    y = y[ids]
+    x = x[ids]
+    scores = scores[ids]
+
+    # scaling
+    y = y * (y_norm-4) - y_off
+    x = x * (x_norm-4) - x_off
+    if logscale:
+        scores = np.log10(scores)
+
+    if ax is None:
+        plt.figure(figsize=fsize)
+        ax = plt.gca()
+
+    if image is not None: ax.imshow(image)
+
+    # color scheme & plot
+    cm = plt.cm.get_cmap('RdYlGn')
+    sc = ax.scatter(x=x, y=y, c=scores, s=size, alpha=alpha,
+                    cmap=cm, vmin=vmin if vmin is not None else scores.min(), vmax=scores.max())
+    cbar = plt.colorbar(sc, ax=ax)
+    cbar.ax.set_ylabel('log(score)' if logscale else 'Score')
 
 def show_roi(scores, roi, image=None,
              ax=None, fsize=(8,5), title='',
