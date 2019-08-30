@@ -155,7 +155,7 @@ ______________________________________________
 
 ## Results
 
-As already demonstrated in the output samples above, **the detector seems to yield quite good out-of-sample results**.
+As already demonstrated in the output samples [above](#Wrapping-filters), **the detector seems to yield quite good out-of-sample results**.
 In fact, the transfer learning from Resnet34 seems so powerful as to allow **reasonable results with as few as 3 training images**.
 
 | ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Detector/Training/full_frame_trained_on_3images_oos_day.PNG) |
