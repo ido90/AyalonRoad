@@ -1,14 +1,14 @@
 # Analysis of Original Video Data of Ayalon Road
 
+TODO abstract
 
 ## Contents
 - [Gathering data](#gathering-data) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/photographer)]
-- Videos preprocessing?
-- [Vehicles detection](#vehicles-detection)
-- [Paths tracking](#tracking) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/tracker)]
-   - [Kalman filter & assignment confusion](#kalman-filter-wiki)
-- [Output analysis](#output-analysis)
+- [Vehicles detection](#vehicles-detection) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Detector)]
+- [Paths tracking](#tracking) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Tracker)]
+- [Traffic analysis](#traffic-analysis) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Analyzer)]
 
+________________________________________
 
 ## [Gathering Data](https://github.com/ido90/AyalonRoad/blob/master/photographer)
 
@@ -17,61 +17,47 @@ A simple magnet-based stand was kindly provided and located on the appartment's 
 It turns out that an 8-minutes video taken this way (compressed into 1 minute) requires ~120MB of storage.
 This does not allow to record the road for 24-7, yet permits a reasonable cover of the road in various dates and hours.
 
-**82 videos were recorded (~14 hours and 13 GB in total)** over a month and a half.
+**81 videos were recorded (~14 hours and 13 GB in total)** over a month and a half.
 
 See [**more detailed description**](https://github.com/ido90/AyalonRoad/blob/master/photographer) and a [**summary of the cover of dates and times**](https://github.com/ido90/AyalonRoad/blob/master/photographer/VideosTimes.ipynb) by the videos.
 
-| ![](https://github.com/ido90/AyalonRoad/blob/master/Output/Data%20samples/day_crowded_minor_reflections.png) |
-| :--: |
-| A sample frame of a video |
-
-| ![](https://idogreenberg.neocities.org/linked_images/stand2.jpg) |
+| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Videos%20data/Photography%20layout/stand2.jpg) |
 | :--: |
 | The recording smartphone in action |
 
-| ![](https://github.com/ido90/AyalonRoad/blob/master/photographer/videos_times.png) |
+| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Videos%20data/Metadata/Videos%20times%20cover.png) |
 | :--: |
 | The cover of hours and weekdays by the recorded videos (each point represents a single video); did you know that [Thursday](https://www.timeanddate.com/calendar/days/thursday.html) is named after Thor son of Odin, the god of thunder? |
 
+________________________________________
 
-## Map of applications and requirements
+## [Vehicles Detection](https://github.com/ido90/AyalonRoad/blob/master/Detector)
 
-| **Application** | **Detection** | **Tracking** | **Filtering objects** | **All frames** | **Whole frames** |  |
-| ---- | ---- | ---- | ---- | ---- | ---- | ---- |
-| **Density vs. time** | Should be close to 100% (any mis-detections are expected to vary between videos e.g. due to illumination, causing bias in density estimates) | Unnecessary | Must filter any object but vehicles in the chosen roads | Unnecessary (can sample several frames) | Unnecessary (can focus on certain areas) |  |
-| **Speed vs. time** | May be partial (as long as not producing much selection bias to the speed) | Must be able to track cars over significant intervals of road | Must filter any object but vehicles in the chosen roads | Long sequences of frames are necessary for tracking over intervals | Unnecessary (can focus on certain areas) |  |
-|  |  |  |  |  |  |  |
-|  |  |  |  |  |  |  |
-|  |  |  |  |  |  |  |
+This package applies vehicles detection on the frames of the videos, namely tries to locate all the vehicles within certain areas given an aerial image of the road.
 
-### TODO
-- detection: [only look for vehicle classes](https://github.com/pjreddie/darknet/issues/142); remove too large boxes; add small boxes?; generate labeled data and find out how to train more?; use SSD or faster-RCNN instead of YOLO?
-- whole frames: detect (automatically or manually) the edges of the road/zone-of-interest, and either manage to only look at bounding boxes in this zone, or simply set the rest of the image to black.
-- filtering: automatically (mostly) achieved by only look at part of the frame.
+#### Contents
+- [**Unsuccessful attempts**](#Unsuccessful-attempts): several out-of-the-box tools mostly failed to detect the vehicles in the images.
+- [**Detector design and training**](#Detector-design-and-training):
+    - [**Data pre-processing**](#Data-pre-processing): 15 video-frames were (manually) tagged and (programatically) converted into anchor-boxes-based training-labels.
+    - [**Detector architecture**](#Detector-architecture): the small amount of labeled data required *transfer learning*, thus only a small network was used on top of 15 pre-trained layers of Resnet34. An additional small location-based network was used to help to distinguish between vehicles in relevant and irrelevant roads. The whole CNN was wrapped by filters removing detections with large overlaps or in irrelevant locations.
+    - [**Training**](#Training): Adam optimizer was applied with relation to L1-loss (for location) and cross-entropy loss (for detection), on batches consisted of anchor-boxes sampled with probabilities corresponding to their losses. The training included 64 epochs with the pre-trained layers freezed, and 12 epochs with them unfreezed, where every epoch went once over each training image. Several experiments were conducted to tune the architecture and training configuration.
+- [**Results**](#Results): the detector seems to yield quite good out-of-sample results, and even demonstrated reasonable results with as few as 3 training images.
+- [**Modules and notebooks**](#Modules-and-notebooks): description of the modules and Jupyer notebooks in this package.
 
-
-## Vehicles Detection
-
-#### Pre-trained networks for object-detection - FAILED
-Several models (including SSD and YOLO) pre-trained on various datasets (including COCO and VOC, both containing several classes of vehicles) were used out-of-the-box to detect vehicles in the frames of the videos.
-
-Unfortunately, most of the pre-trained models did not prove useful for this project's data, with its extremely-small often-overlapping vehicles and some noise of glass-window reflections.
-The best results were achieved by YOLOv3, which still yielded poor detection-rate - even on zoomed-in frames of clean, well-illuminated videos.
-SSD models are reported to have better detection rate for small objects, yet they did not do any better than YOLO.
-
-| ![](https://github.com/ido90/AyalonRoad/blob/master/Output/Detection%20issues/poor_detection_rate.png) |
+| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Detector/Out-of-the-box%20tools%20outputs/full_frame_SSD_on_top_of_MobileNet.png) |
 | :--: |
-| A sample zoomed-in frame with poor vehicles-detection-rate by a pre-trained YOLO model |
+| Out-of-the-box SSD applied on a well-illuminated sample photo |
 
-#### Motion-detection for object-detection - NOT TRIED
-The videos are mostly static and the vehicles are small and moving most of the time, hence a motion-detection algorithm based on difference between frames seems like a promising method for detection of vehicles.
+| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Detector/ROI%20outputs/full_frame_trained_night2318.PNG) |
+| :--: |
+| Output sample of the trained detector applied on a dark photo with significant windows-reflecitons noise (the detector was trained to detect only vehicles in the road heading north after Hashalom interchange) |
 
-This direction was not researched due to the choice to focus on CNN-based detection and classification.
 
-#### TODO what did I do?
-
+________________________________________
 
 ## [Tracking](https://github.com/ido90/AyalonRoad/tree/master/Tracker)
+
+TODO
 
 #### Summary
 
@@ -110,4 +96,6 @@ However, this approach is quite wrong because it cannot recognize actual perpend
 Note that it could deal with many confusions, but many others (as in the example above) were between very similar vehicles (at least in the video resolution) and probably couldn't be prevented by this approach.
 
 
-## Output Analysis
+## Traffic Analysis
+
+TODO
