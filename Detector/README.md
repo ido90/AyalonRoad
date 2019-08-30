@@ -145,7 +145,7 @@ for epoch: # 64 epochs with freezed Resnet layers + 12 epochs with all layers un
         apply Adam optimization step;
 ```
 
-| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Detector/Training/full_frame_badly_trained_no_upsampling.PNG) |
+| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Detector/Training/Head%20Training%20Loss.PNG) |
 | :--: |
 | Train and validation losses during the first training phase (with freezed Resnet-layers); note that the background train loss corresponds only to the sampled (i.e. difficult) anchor-boxes, and is larger than the validation loss (computed over all anchor-boxes) |
 
