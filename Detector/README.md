@@ -11,6 +11,10 @@ This package applies vehicles detection on the frames of the videos, namely trie
 - [**Results**](#Results): the detector seems to yield quite good out-of-sample results, and even demonstrated reasonable results with as few as 3 training images.
 - [**Modules and notebooks**](#Modules-and-notebooks): description of the modules and Jupyer notebooks in this package.
 
+| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Detector/ROI%20outputs/full_frame_trained_night2318.PNG) |
+| :--: |
+| An output sample of the detector applied on dark photo with significant windows-reflecitons noise |
+
 
 ______________________________________________
 
