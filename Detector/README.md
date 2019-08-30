@@ -1,15 +1,16 @@
 # Vehicles Detection
 
-This package applies vehicles detection to the frames of the videos, namely tries to locate all the vehicles within certain areas given an aerial image of the road.
+This package applies vehicles detection on the frames of the videos, namely tries to locate all the vehicles within certain areas given an aerial image of the road.
 
 #### Contents
-- [Unsuccessful attempts](#Unsuccessful-attempts): several out-of-the-box tools mostly failed to detect the vehicles in the images.
-- [Detector design and training](#Detector-design-and-training):
-    - [Data pre-processing](#Data-pre-processing): 15 video-frames were (manually) tagged and (programatically) converted into anchor-boxes-based training-labels.
-    - [Detector architecture](#Detector-architecture): the small amount of labeled data required transfer-learning, thus only a small network was used on top of 15 pre-trained layers of Resnet34. An additional small location-based network was used to help to distinguish between objects in relevant and irrelevant roads. The whole CNN was wrapped by filters removing detections with large overlaps or in irrelevant locations.
-    - [Training](#Training): Adam optimizer was applied with relation to L1-loss (for location) and cross-entropy loss (for detection), on batches consisted of sub-samples of anchor-boxes with large losses (*Hard Negative Mining*). The training included 64 epochs with the pre-trained layers freezed, and 12 epochs with them unfreezed, where every epoch went once over each training image.
-- [Results](#Results): the detector seems to yield quite good out-of-sample results, and even demonstrated reasonable results with as few as 3 training images.
-- [Modules and notebooks](#Modules-and-notebooks): description of the modules and Jupyer notebooks in this package.
+- [**Unsuccessful attempts**](#Unsuccessful-attempts): several out-of-the-box tools mostly failed to detect the vehicles in the images.
+- [**Detector design and training**](#Detector-design-and-training):
+    - [**Data pre-processing**](#Data-pre-processing): 15 video-frames were (manually) tagged and (programatically) converted into anchor-boxes-based training-labels.
+    - [**Detector architecture**](#Detector-architecture): the small amount of labeled data required *transfer learning*, thus only a small network was used on top of 15 pre-trained layers of Resnet34. An additional small location-based network was used to help to distinguish between objects in relevant and irrelevant roads. The whole CNN was wrapped by filters removing detections with large overlaps or in irrelevant locations.
+    - [**Training**](#Training): Adam optimizer was applied with relation to L1-loss (for location) and cross-entropy loss (for detection), on batches consisted of anchor-boxes sampled with probabilities corresponding to their losses. The training included 64 epochs with the pre-trained layers freezed, and 12 epochs with them unfreezed, where every epoch went once over each training image. Several experiments were conducted to tune the architecture and training configuration.
+- [**Results**](#Results): the detector seems to yield quite good out-of-sample results, and even demonstrated reasonable results with as few as 3 training images.
+- [**Modules and notebooks**](#Modules-and-notebooks): description of the modules and Jupyer notebooks in this package.
+
 
 ______________________________________________
 
@@ -45,15 +46,16 @@ ______________________________________________
 
 #### Anchor boxes labeling
 Every image was separated into few hundreds of thousands of (overlapping) *anchor-boxes*.
-The labeled objects were associated with the corresponding anchor boxes, based on [this detailed tutorial](https://medium.com/@fractaldle/guide-to-build-faster-rcnn-in-pytorch-95b10c273439).
+The labeled objects were associated with the corresponding anchor boxes: an anchor-box was labeled as object if it had large intersection with any object; as background if it had little or non intersection with objects; and was omitted from the training if it was somewhere in the middle.
 
+The creation of anchor-boxes and labels is based on [this detailed tutorial](https://medium.com/@fractaldle/guide-to-build-faster-rcnn-in-pytorch-95b10c273439).
 Several modifications were required, such as promotion-scheme for tiny objects which didn't have significant *Intersection-Over-Union* with any anchor-box, hence were originally not assigned to any anchor-box for training.
 
 | ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Detector/Architecture/Anchor%20Boxes.png) |
 | :--: |
 | A sample of anchor boxes and their receptive field |
 
-Note: 9 anchor-boxes with various scales and shapes are used at each location. About half of them (mainly the larger and the higher ones) rarely return positive detections (see below). However, removing them from the training seemed to slightly harm the results; and removing them from operational prediction would save only insignificant amount of time, since it would only affect the last layer of the detection network. Thus, all the anchor-boxes were left in the detection system.
+Note: 9 anchor-boxes with various scales and shapes are used at each location (as displayed above). About half of them (mainly the larger and the higher ones) rarely return positive detections (see below). However, removing them from the training seemed to slightly harm the results; and removing them from operational prediction would save only insignificant amount of time, since it would only affect the last layer of the detection network. Thus, all the anchor-boxes were left in the detection system.
 
 | ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Detector/Training/Scores%20per%20Anchor%20Shape.PNG) |
 | :--: |
@@ -106,10 +108,10 @@ At first, the RPN and location-based networks were trained with relation to the 
 Then the Resnet layers were "unfreezed", and the whole network was trained slightly further.
 
 #### Sampling
-Since there are up to hundreds of objects per frame, and hundreds of thousands of background boxes, it was necessary to increase the weigh of the objects compared to the background in order to have any positive predictions.
-Increasing the FN-loss to the same scale as the FP-loss did not seem to overcome the differences in the amount of data.
-Instead, each training batch was shrinked to include a similar number of objects and of randomly-sampled background boxes. However, this method often entirely missed the few confusing background boxes in every image (cars reflections, cars in different roads, street lights, etc.), leading to many False Positive detections.
-Henceforce, the background boxes were sampled with weights corresponding to their loss with relation to the current model, allowing the training to focus on the difficult cases. This turned out to be a known concept named ***Hard Negative Mining***.
+- Since there are up to hundreds of objects per frame, and hundreds of thousands of background boxes, it was necessary to increase the weigh of the objects compared to the background in order to have any positive predictions.
+- Increasing the FN-loss to the same scale as the FP-loss did not seem to overcome the differences in the amount of data.
+- Instead, each training batch was shrinked to include a similar number of objects and of randomly-sampled background boxes. However, this method often entirely missed the few confusing background boxes in every image (cars reflections, cars in different roads, street lights, etc.), leading to many False Positive detections.
+- Therefore, the background boxes were sampled with weights corresponding to their loss with relation to the current model, allowing the training to focus on the difficult cases. This turned out to be a known concept named ***Hard Negative Mining***.
 
 | ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Detector/Training/full_frame_badly_trained_no_upsampling.PNG) |
 | :--: |
@@ -120,7 +122,14 @@ Henceforce, the background boxes were sampled with weights corresponding to thei
 | The top 1% detection-scores of the anchor-boxes in an arbitrary image: only few of the anchor-boxes actually require significant training |
 
 #### Hyper-parameters and architecture tuning
-TODO
+Several experiments were conducted to test various configurations of the detector architecture and training.
+The configurations were measured by both their losses and their visualized outputs.
+
+The tested configurations included:
+- RPN architecture: number and sizes of hidden layers.
+- Location-based network architecture: number and sizes of hidden layers, activation functions (logsig vs. relu), network disabling.
+- Training hyper-parameters: learning rate, number of epochs, batch size.
+- Training data: number of images, number of labeled anchor-boxes.
 
 #### Pseudo code
 The whole training process can be summarized as follows:
