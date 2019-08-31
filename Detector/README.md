@@ -7,7 +7,7 @@ This package applies vehicles detection on the frames of the videos, namely trie
 - [**Detector design and training**](#Detector-design-and-training):
     - [**Data pre-processing**](#Data-pre-processing): 15 video-frames were (manually) tagged and (programatically) converted into anchor-boxes-based training-labels.
     - [**Detector architecture**](#Detector-architecture): the small amount of labeled data required *transfer learning*, thus only a small network was used on top of 15 pre-trained layers of Resnet34. An additional small location-based network was used to help to distinguish between vehicles in relevant and irrelevant roads. The whole CNN was wrapped by filters removing detections with large overlaps or in irrelevant locations.
-    - [**Training**](#Training): Adam optimizer was applied with relation to L1-loss (for location) and cross-entropy loss (for detection), on batches consisted of anchor-boxes sampled with probabilities corresponding to their losses. The training included 64 epochs with the pre-trained layers freezed, and 12 epochs with them unfreezed, where every epoch went once over each training image. Several experiments were conducted to tune the architecture and training configuration.
+    - [**Training**](#Training): Adam optimizer was applied with relation to L1-loss (for location) and cross-entropy loss (for detection), on batches consisted of anchor-boxes sampled with probabilities corresponding to their losses. The training took ~12 minutes on a laptop and included 64 epochs with the pre-trained layers freezed, and 12 epochs with them unfreezed, where every epoch went once over each training image. Several experiments were conducted to tune the architecture and training configuration.
 - [**Results**](#Results): the detector seems to yield quite good out-of-sample results, and even demonstrated reasonable results with as few as 3 training images.
 - [**Modules and notebooks**](#Modules-and-notebooks): description of the modules and Jupyer notebooks in this package.
 
@@ -49,7 +49,7 @@ ______________________________________________
 *Bounding-boxes* were manually tagged for all the vehicles in the relevant road in 15 video-frames (out of ~190K frames in the whole data).
 
 #### Anchor boxes labeling
-Every image was separated into few hundreds of thousands of (overlapping) *anchor-boxes*.
+Every image was separated into 290K (overlapping) *anchor-boxes*.
 The labeled objects were associated with the corresponding anchor boxes: an anchor-box was labeled as object if it had large intersection with any object; as background if it had little or non intersection with objects; and was omitted from the training if it was somewhere in the middle.
 
 The creation of anchor-boxes and labels is based on [this detailed tutorial](https://medium.com/@fractaldle/guide-to-build-faster-rcnn-in-pytorch-95b10c273439).
@@ -112,7 +112,7 @@ At first, the RPN and location-based networks were trained with relation to the 
 Then the Resnet layers were "unfreezed", and the whole network was trained slightly further.
 
 #### Sampling
-- Since there are up to hundreds of objects per frame, and hundreds of thousands of background boxes, it was necessary to increase the weigh of the objects compared to the background in order to have any positive predictions.
+- Since there are up to hundreds of objects per frame, and 290K background boxes, it was necessary to increase the weigh of the objects compared to the background in order to have any positive predictions.
 - Increasing the FN-loss to the same scale as the FP-loss did not seem to overcome the differences in the amount of data.
 - Instead, each training batch was shrinked to include a similar number of objects and of randomly-sampled background boxes. However, this method often entirely missed the few confusing background boxes in every image (cars reflections, cars in different roads, street lights, etc.), leading to many False Positive detections.
 - Therefore, the background boxes were sampled with weights corresponding to their loss with relation to the current model, allowing the training to focus on the difficult cases. This turned out to be a known concept named ***Hard Negative Mining***.
@@ -135,6 +135,24 @@ The tested configurations included:
 - Training hyper-parameters: learning rate, number of epochs, batch size.
 - Training data: number of images, number of labeled anchor-boxes.
 
+        Restoring training results deterministically turned out to be highly non-trivial task.
+        In fact, even the following code - put together carefully from multiple stack-overflow discussions -
+        did not prevent the stochasticity of the training:
+        
+        def set_seeds(seed):
+            random.seed(seed)
+            np.random.seed(seed)
+            t.manual_seed(seed)
+            t.cuda.manual_seed(seed)
+            t.cuda.manual_seed_all(seed)
+            t.backends.cudnn.deterministic = True
+            t.backends.cudnn.benchmark = False
+            t.backends.cudnn.enabled = False
+        
+        However, in the resolution of this project, running the vanilla configuration 2-3 times in order to
+        estimate the internal variance, allowed sufficient level of confidence
+        (wouldn't call it statistical significance...) in the results.
+
 #### Pseudo code
 The whole training process can be summarized as follows:
 ```
@@ -152,6 +170,9 @@ for epoch: # 64 epochs with freezed Resnet layers + 12 epochs with all layers un
 | ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Detector/Training/full_frame_semi_trained_reflection.PNG) ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Detector/Training/full_frame_semi_trained_reflection_zoomin.PNG) |
 | :--: |
 | An output sample of the CNN in the middle of training; note the confusion with the reflection of the car in the window |
+
+#### Running time
+The training was run on my personal laptop (with some simple 2GB-GPU), and took **5 minutes with freezed pre-trained layers + 7 minutes with unfreezed layers**.
 
 
 ______________________________________________
