@@ -1,7 +1,7 @@
 # Traffic Analysis in Original Video Data of Ayalon Road
 
-This repository tells the tail of 81 videos of ~8 minutes recording the traffic in *Ayalon Road* over a month and a half, as observed from the window in the appartment where I lived in 2019.
-My quest items included a laptop, a smartphone camera and a vacuum mobile holder for the car.
+This repository tells the tail of 81 8-minutes-long videos recording the traffic in *Ayalon Road* over a month and a half, as observed from the window in the appartment where I lived in 2019.
+My quest items included a laptop, a smartphone camera and a vacuum mobile holder for car.
 
 Analysis of the traffic required detection of vehicles in certain areas in the videos frames and tracking of a vehicle over sequential frames.
 
