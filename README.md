@@ -73,12 +73,30 @@ ________________________________________
 
 ## [Tracking](https://github.com/ido90/AyalonRoad/tree/master/Tracker)
 
-TODO
+This package applies **tracking of vehicles along the road**. The main task is to **associate detections of the same object in various frames of a video**.
+
+The tracking was developped in the framework of [*Objectdetecttrack*](https://github.com/cfotache/pytorch_objectdetecttrack) package.
+However, **[*SORT*](https://arxiv.org/abs/1602.00763) tracker - upon which the framework is based - associates detections of the same object in adjacent frames according to the intersection of the corresponding bounding-boxes, implicitly assuming high frame-rate that guarantees such intersection.
+Since the assumption does not hold for the data in this project (with its fast-moving cars and only ~4 FPS in hyperlapse camera mode), the assignment mechanism was replaced with a [location-based probabilistic model implemented through a Kalman filter](https://github.com/ido90/AyalonRoad/tree/master/Tracker#kalman-filter-based-probabilistic-model-for-objects-assignment)**, expressing the large variance in the location of a vehicle along the direction of the road.
+The model basically asks "how likely is it for track `i` (given the road direction and the track history) to arrive within one frame to the location of the new-detection `j`?".
+
+| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Detections%20assignment/Tracker%20Prediction%20Field%201.png) |
+| :--: |
+| A vehicle (#18) with 3 non-intersecting bounding-boxes in 3 adjacent frames: the connection between the bounding-boxes cannot be based on intersection, but can be deduced from the Kalman-filter-based probabilistic model, whose output likelihoods are denoted by colored points (red for low likelihood and green for high likelihood) |
+
+The tracking was mostly applied on a continuously-visible interval of the road (north to Moses bridge).
+The modified tracking algorithm allows **successful tracking of most of the vehicles over most of the road interval, even in presence of missing detections in few sequential frames**.
+
+| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Outputs/Skipped%20Frames.png) |
+| :--: |
+| Tracking over gaps of missing detections: the red points mark the detected location of the tracked object over the various frames |
+
+The final tracking algorithm can process 1.2 full frames or 3 cropped frames per second, which requires **10 minutes to process a single cropped video** of 8 minutes.
 
 
 ________________________________________
 
-## Traffic Analysis
+## [Traffic Analysis](https://github.com/ido90/AyalonRoad/blob/master/Analyzer)
 
 TODO
 
