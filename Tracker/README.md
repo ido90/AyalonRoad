@@ -31,7 +31,7 @@ While being an extremely helpful framework for tracking, applying Objectdetecttr
 | :--: |
 | The detected location of a car (denoted by #18) in 3 adjacent frames: since there is no intersection between the location in different frames, any intersection-based assignment should have difficulties to apply tracking correctly |
 
-**The limitations described above led to various anomalies in the tracking process, including missing tracks, short tracks (with missing observations), "jumps" of tracks betweeen different vehicles, and tracks with infeasible motion direction.**
+The limitations described above led to various anomalies in the tracking process, including missing tracks, short tracks (with missing observations), "jumps" of tracks betweeen different vehicles, and tracks with infeasible motion direction.
 
 
 ________________________________
@@ -61,6 +61,8 @@ Whenever a new observation is assigned, the new information is incorporated into
 - The **predicted location** distribution around the actual next-frame location is assumed to be a **multivariate Gaussian with standard-deviation of 10 pixels in the road direction and 2 pixels in the perpendicular direction**, mostly caused by changes in velocity.
     - In terms of Kalman filter, the covariance matrix `Q0=((10,0),(0,2))` in road-direction-basis has to be transformed into the camera-basis. This is (approximately) done by occasionally using the whole video's tracks history to estimate the road direction `u1`, forming the basis matrix `U=(u1,u2)` (with `u2` being perpendicular to `u1`), and applying the transformation `Q = U^T * Q0 * U`.
 - The size and shape of the object are also a part of the Kalman filter state. However, due to the low variance between the sizes estimated by the detector, it was decided to keep the probabilistic-assignment-model simple and based merely on location.
+
+#### The probabilistic model: limitations and possible improvements
 
 In addition to conventional limiting assumptions such as normal distributions, the probabilistic model has several disturbing properties:
 - The uncertainty is defined in terms of pixels rather than meters, even though the largest source of uncertainty is velocity changes (which occur in meters...), and in spite of the varying meter/pixel ratio over the frame. Expressing this in the model would require the additive noise `Q` to depend on the object location, which is not inherently-supported by the standard Kalman filter, and thus would reuqire modification of `Q` every step. Since the current approximation looks (visually) sufficient, this was not attempted.
@@ -109,15 +111,37 @@ The table below summarizes the main noticed anomalies and demonstrates the signi
 
 #### Too-short tracks
 
-The main known tracking issue which is not nearly-entirely solved by the new algorithm is the too-short tracks, in particular in videos of heavy traffic.
+The main known tracking issue which is not nearly-entirely solved by the new algorithm is the too-short tracks (i.e. tracks which do not cover most of the width of the frame), in particular in videos of heavy traffic.
 
-The cropped video frames, with Moses bridge hiding a piece of road in the right, allow continuous tracking of vehicles over 80-90% of the frame width. However, the length of the the tracks is often significantly shorter.
+The cropped video frames, with Moses bridge hiding a piece of road in the right, allow continuous tracking of vehicles over 80-90% of the frame width. However, the length of the tracks is often significantly shorter, due to several observed causes:
 
+| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Problems/Tracks%20Lengths%20Distribution%20Easy.png) ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Problems/Tracks%20Lengths%20Distribution%20Hard.png) |
+| :--: |
+| The distribution of the horizontal tracks-lengths as part of the frame width in both "easy video" and "hard video" |
 
+- Fake tracks caused by False-Positive detections.
+
+| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Problems/False%20Detection%20Zoomin.png) |
+| :--: |
+| A False-Positive detection yielding a short track |
+
+- Failed tracks caused by hidings or by False-Negative detections. TODO explain that FN affect heavy traffic more due to 1. longer time per tack; and 2. more un-detections
+
+| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Problems/Hidden%20Car.png) |
+| :--: |
+| A bus hiding a car; the hiding lasted several frames |
+
+| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Problems/Crowded%20Road%2036%20detected%20out%20of%2045.png) |
+| :--: |
+| A frame with 9 missing detections out of 45 |
+
+Filtering-out the short tracks should eliminate both fake and failed tracks.
+It looks like the un-detected vehicles shuold not cause significant biases in the data (e.g. it doesn't look like the un-detected cars tend to be of certain speeds or certain lanes), except for under-estimation of the number of vehicles in heavy traffic.
 
 #### A sample of outputs
 
-
+TODO
 
 #### Running time
 
+TODO
