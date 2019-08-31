@@ -38,7 +38,7 @@ ________________________________
 
 ## Kalman-filter-based probabilistic model for objects assignment
 
-Luckily enough, SORT already provides us a running mechanism that stores the track state and predicts its next location along with uncertainty assessment.
+Luckily enough, SORT already provides us with a running mechanism that stores the track state and predicts its next location along with uncertainty assessment.
 This can be exploited to form a probabilistic model for the predicted location, which can be directly used for likelihood-based assignment.
 
 First, let's have a very brief review of the relevant parts of Kalman filter.
@@ -105,7 +105,7 @@ The table below summarizes the main noticed anomalies and demonstrates the signi
 | **Short tracks** | 50% of tracks shorter than 30% of the road | 25% of tracks shorter than 70% of the road | 80% of tracks shorter than 70% of the road in extremely crowded videos |
 | **Fake huge car detection** | 3% of tracks | None | None |
 | **Motion against road direction** | 4% of tracks | None | 10-20%, most of them either short tracks (usually fake detections) or slight detection-fluctuations of nearly-standing cars |
-| **Large motion in perpendicular to road** | 2% of the tracks seemed to follow fake perpendicular motion due to confusion in detection<->track assignment | most of the perpendicular motions are approved as actual car's lane-transition | ditto |
+| **Large motion in perpendicular to road** | 2% of the tracks seemed to follow fake perpendicular motion due to confusion in detection<->track assignment | most of the perpendicular motions are approved as actual car's lane-transition | most of the perpendicular motions are approved as actual car's lane-transition |
 
 - Note: "easy video" means bright illumination, not-too-crowded traffic and no significant reflections from the window. "Hard video" means not easy.
 
@@ -113,11 +113,13 @@ The table below summarizes the main noticed anomalies and demonstrates the signi
 
 The main known tracking issue which is not nearly-entirely solved by the new algorithm is the too-short tracks (i.e. tracks which do not cover most of the width of the frame), in particular in videos of heavy traffic.
 
-The cropped video frames, with Moses bridge hiding a piece of road in the right, allow continuous tracking of vehicles over 80-90% of the frame width. However, the length of the tracks is often significantly shorter, due to several observed causes:
+The cropped video frames, with Moses bridge hiding a piece of the road in the right, allow continuous tracking of vehicles over 80-90% of the frame width. However, the length of the tracks is often significantly shorter.
 
 | ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Problems/Tracks%20Lengths%20Distribution%20Easy.png) ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Problems/Tracks%20Lengths%20Distribution%20Hard.png) |
 | :--: |
-| The distribution of the horizontal tracks-lengths as part of the frame width in both "easy video" and "hard video" |
+| The distribution of the horizontal tracks-lengths as part of the frame width in both an "easy video" and a "hard video" |
+
+Several triggers were observed for short tracks:
 
 - Fake tracks caused by False-Positive detections.
 
@@ -125,7 +127,8 @@ The cropped video frames, with Moses bridge hiding a piece of road in the right,
 | :--: |
 | A False-Positive detection yielding a short track |
 
-- Failed tracks caused by hidings or by False-Negative detections. TODO explain that FN affect heavy traffic more due to 1. longer time per tack; and 2. more un-detections
+- Failed tracks caused by hidings or by False-Negative detections.
+    - In particular, in presence of heavy traffic, the crowded vehicles increase the rate of un-detections; and the slow motion increases the number of frames in which the track may be lost.
 
 | ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Problems/Hidden%20Car.png) |
 | :--: |
@@ -133,15 +136,37 @@ The cropped video frames, with Moses bridge hiding a piece of road in the right,
 
 | ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Problems/Crowded%20Road%2036%20detected%20out%20of%2045.png) |
 | :--: |
-| A frame with 9 missing detections out of 45 |
+| A frame with 9 missing detections out of 45 (20%) |
 
-Filtering-out the short tracks should eliminate both fake and failed tracks.
-It looks like the un-detected vehicles shuold not cause significant biases in the data (e.g. it doesn't look like the un-detected cars tend to be of certain speeds or certain lanes), except for under-estimation of the number of vehicles in heavy traffic.
+**Filtering-out the short tracks should eliminate both fake and failed tracks**.
+It looks like the un-detected vehicles should not cause significant biases in the data (e.g. it doesn't look like the un-detected cars tend to be of certain speeds or certain lanes) - except for under-estimation of the number of vehicles in heavy traffic.
 
 #### A sample of outputs
 
-TODO
+| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Outputs/Skipped%20Frames.png) |
+| :--: |
+| Tracking over gaps of missing detections: the red points mark the detected location of the tracked object over the various frames |
+
+| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Outputs/Line%20Transition%20Plot.png) ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Outputs/Line%20Transition%202.png) |
+| :--: |
+| Detection of large motion in perpendicular to the road, indicating lane-transition |
+
+| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Outputs/Lines%20Plot%20Marked.png) |
+| :--: |
+| The average position of a vehicle in the axis perpendicular to the road corresponds to the lane it drives in |
+
 
 #### Running time
 
-TODO
+The tracking process (including frames reading and pre-processing, vehicles detection and assignment to tracks) was profiled using `%lprun`.
+Note that since the GPU runs in parallel to the CPU, it is important to actively synchronize them when applying running-time profiling.
+
+Several minor inefficiencies turned out to consume significant amonut of time and were modified accordingly (e.g. the data-frames storing the tracking data are now allocated in large buffers in advance, and the GPU memory is only cleaned once in many iterations).
+
+**Two remaining significant time-consumers are currently known**:
+- **Computation of the CNN**, which is the natural inherent time-consumer. Its running time can be reduced by cropping the frame whenever only part of the frame is of interest (with the cost of slightly defecting the receptive-fields near the cropped edges). It may also be possible to compute only the convolutions required for the relevant output, e.g. omitting convolutions outside the receptive field of the road (which sometimes can't be cropped due to the rectangular constraint of an image).
+- **Normalization of the frame mean and variance**, which is currently done over the whole frame before cropping (since that's how the normalization was applied during the training). Since the normalization constants are probably similar over the frames in a single video, this probably can be optimized and only applied to the cropped area of the image, without significant effects on the normalization.
+
+Having said that, **the current running time on my personal laptop is entirely reasonable** for the needs of the project:
+- Full frames: 1.2 frames per second, i.e. ~25 minutes per video.
+- **Cropped frames: 3 frames per second, i.e. ~10 minutes per video**.
