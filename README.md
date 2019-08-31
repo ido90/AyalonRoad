@@ -7,6 +7,7 @@ TODO abstract
 - [Vehicles detection](#vehicles-detection) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Detector)]
 - [Paths tracking](#tracking) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Tracker)]
 - [Traffic analysis](#traffic-analysis) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Analyzer)]
+- [References](#references)
 
 ________________________________________
 
@@ -39,20 +40,27 @@ Several out-of-the-box tools were tried, but seemed to fail due to the large den
 | :--: |
 | Out-of-the-box SSD applied on a well-illuminated sample photo |
 
-Instead, a dedicated detector was trained as follows:
-- **Data pre-processing**: **15 video-frames were (manually) tagged** and (programatically) converted into anchor-boxes-based training-labels.
+Instead, a dedicated detector was trained in PyTorch as follows:
+- **Data pre-processing**: **15 video-frames were (manually) tagged** (out of 190K frames in the whole data) and (programatically) converted into anchor-boxes-based training-labels.
 
 | ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Detector/Architecture/Anchor%20Boxes.png) |
 | :--: |
 | A sample of anchor boxes and their receptive field |
 
-- **Detector architecture**: the small amount of labeled data required *transfer learning*, thus only a small network was used on top of 15 pre-trained layers of Resnet34, chosen to fit the vehicles sizes and the desired *receptive field*. An additional small location-based network was used to help to distinguish between vehicles in relevant and irrelevant roads. The whole CNN was wrapped by filters removing detections with large overlaps or in irrelevant locations.
+- **Detector architecture**:
+    - The small amount of labeled data required little degrees of freedom along with efficient *transfer learning*, thus only a small network was used on top of 15 pre-trained layers of Resnet34. The layers were chosen according to the vehicles sizes and the desired *receptive field* (displayed above).
+    - An additional small location-based network was used to help to distinguish between vehicles in relevant and irrelevant roads.
+    - The whole CNN was wrapped by filters removing detections with large overlaps or in irrelevant locations.
 
 | ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Detector/Architecture/Network%20Architecture.PNG) |
 | :--: |
 | Detection network architecture |
 
-- **Training**: Adam optimizer was applied with relation to L1-loss (for location) and cross-entropy loss (for detection), on batches consisted of anchor-boxes sampled with probabilities corresponding to their losses. The training included 64 epochs with the pre-trained layers freezed, and 12 epochs with them unfreezed, where every epoch went once over each training image. Several experiments were conducted to tune the architecture and training configuration.
+- **Training**:
+    - Adam optimizer was applied with relation to L1-loss (for location) and cross-entropy loss (for detection).
+    - The training batches consisted of anchor-boxes sampled with probabilities corresponding to their losses.
+    - The training lasted 12 minutes on a laptop and included 64 epochs with the pre-trained layers freezed, and 12 epochs with them unfreezed, where every epoch went once over each training image.
+    - Several experiments were conducted to tune the architecture and training configuration.
 
 The detector seems to yield quite good out-of-sample results, and even demonstrated reasonable results with as few as 3 training images.
 
@@ -104,6 +112,18 @@ However, this approach is quite wrong because it cannot recognize actual perpend
 Note that it could deal with many confusions, but many others (as in the example above) were between very similar vehicles (at least in the video resolution) and probably couldn't be prevented by this approach.
 
 
+________________________________________
+
 ## Traffic Analysis
 
 TODO
+
+
+________________________________________
+
+## References
+- [VGG Image Annotator](http://www.robots.ox.ac.uk/~vgg/software/via/) / Abhishek Dutta et al., Oxford
+- [Guide to build Faster RCNN in PyTorch](https://medium.com/@fractaldle/guide-to-build-faster-rcnn-in-pytorch-95b10c273439) / Fractal research group
+- [Object detection and tracking in PyTorch](https://towardsdatascience.com/object-detection-and-tracking-in-pytorch-b3cf1a696a98) / Chris Fotache
+- [Simple Online and Realtime Tracking](https://arxiv.org/abs/1602.00763) / Alex Bewley et al.
+- [Kalman Filter](https://en.wikipedia.org/wiki/Kalman_filter) / Wikipedia
