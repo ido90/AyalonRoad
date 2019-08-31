@@ -1,8 +1,28 @@
 # Tracking
 
-This package applies tracking of vehicles along the road. The main task is to associate detections of the same object in various frames of a video.
+This package applies **tracking of vehicles along the road**. The main task is to **associate detections of the same object in various frames of a video**.
 
-The tracking code framework is based on [Objectdetecttrack](https://github.com/cfotache/pytorch_objectdetecttrack) package. TODO...
+The tracking was developped in the framework of [*Objectdetecttrack*](https://github.com/cfotache/pytorch_objectdetecttrack) package, though its two core components were replaced:
+- The out-of-the-box [*YOLO* detector could not effectively detect most of the vehicles](https://github.com/ido90/AyalonRoad/tree/master/Detector#Unsuccessful-attempts) in the videos, and was replaced with a [dedicated detector](https://github.com/ido90/AyalonRoad/tree/master/Detector).
+- **The *SORT* tracker associates detections of the same object in adjacent frames according to the intersection of the corresponding bounding-boxes, implicitly assuming high frame-rate that guarantees such intersection. Since the assumption does not hold for the data in this project (with its fast-moving cars and only ~4 FPS in hyperlapse camera mode), the assignment mechanism was replaced with a [location-based probabilistic model implemented through a Kalman filter](#kalman-filter-based-probabilistic-model-for-objects-assignment)**, expressing the large variance in the location of a vehicle along the direction of the road. The model basically asks "how likely is it for track `i` (given the road direction and the track history) to arrive within one frame to the location of new-detection `j`?".
+
+| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Detections%20assignment/Tracker%20Prediction%20Field%201.png) |
+| :--: |
+| A vehicle (#18) with 3 non-intersecting bounding-boxes in 3 adjacent frames: the connection between the bounding-boxes cannot be based on intersection, but can be deduced from the Kalman-filter-based probabilistic model, whose output likelihoods are denoted by colored points (red for low likelihood and green for high likelihood) |
+
+The tracking was mostly applied on a continuously-visible interval of the road (north to Moses bridge).
+The modified tracking algorithm allows **successful tracking of most of the vehicles over most of the road interval**, even in presence of missing detections in few sequential frames.
+
+| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Outputs/Skipped%20Frames.png) |
+| :--: |
+| Tracking over gaps of missing detections: the red points mark the detected location of the tracked object over the various frames |
+
+The final tracking algorithm can process 1.2 full frames or 3 cropped frames per second, which requires **10 minutes to process a single cropped video** of 8 minutes.
+
+#### Contents
+- [SORT](#sort-simple-online-and-realtime-tracking): how it works and why it fails in this project.
+- [Kalman-filter-based probabilistic model](#kalman-filter-based-probabilistic-model-for-objects-assignment) for objects assignment: Kalman filter, the probabilistic model and some limitations of the model.
+- [Results](#results): reduction of failures in the modified tracking algorithm, outputs demonstration and running time.
 
 
 ________________________________
@@ -24,7 +44,7 @@ While being an extremely helpful framework for tracking, applying Objectdetecttr
 | :--: |
 | An output sample of the out-of-the-box YOLO detector applied on a well-illuminated, reflections-free, zoomed-in frame |
 
-- **The vehicles often move too fast to have self-intersection over adjacent frames**. For example, `90 km/h = 25 m/s = 6.7 m/frame`, whereas a private car's typical length is 4.5 meters.
+- **The frame-rate (~4 FPS due to the hyperlapse camera mode) is often too low for fast vehicles to have self-intersection over adjacent frames**. For example, `90 km/h = 25 m/s = 6.7 m/frame`, whereas a private car's typical length is 4.5 meters.
     - Note that if the velocity of the vehicle is known, then its predicted location will be correct and will have intersection with the new observation; however, when the velocity either significantly-changes or is entirely unknown (which is the case in the beginning of every track), this may often lead to the failure of the tracking.
 
 | ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Detections%20assignment/Tracker%20IOU%201.png) |
@@ -103,7 +123,7 @@ The table below summarizes the main noticed anomalies and demonstrates the signi
 | --- | --- | --- | --- |
 | **Un-detected vehicles** | Estimated False-Negative of 40-80% of the vehicles in a frame | 5-10% | 10-20% |
 | **Short tracks** | 50% of tracks shorter than 30% of the road | 25% of tracks shorter than 70% of the road | 80% of tracks shorter than 70% of the road in extremely crowded videos |
-| **Fake huge car detection** | 3% of tracks | None | None |
+| **Fake huge-car detection** | 3% of tracks | None | None |
 | **Motion against road direction** | 4% of tracks | None | 10-20%, most of them either short tracks (usually fake detections) or slight detection-fluctuations of nearly-standing cars |
 | **Large motion in perpendicular to road** | 2% of the tracks seemed to follow fake perpendicular motion due to confusion in detection<->track assignment | most of the perpendicular motions are approved as actual car's lane-transition | most of the perpendicular motions are approved as actual car's lane-transition |
 
