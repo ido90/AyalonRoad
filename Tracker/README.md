@@ -11,7 +11,7 @@ The tracking was developped in the framework of [*Objectdetecttrack*](https://gi
 | A vehicle (#18) with 3 non-intersecting bounding-boxes in 3 adjacent frames: the connection between the bounding-boxes cannot be based on intersection, but can be deduced from the Kalman-filter-based probabilistic model, whose output likelihoods are denoted by colored points (red for low likelihood and green for high likelihood) |
 
 The tracking was mostly applied on a continuously-visible interval of the road (north to Moses bridge).
-The modified tracking algorithm allows **successful tracking of most of the vehicles over most of the road interval**, even in presence of missing detections in few sequential frames.
+The modified tracking algorithm allows **successful tracking of most of the vehicles over most of the road interval, even in presence of missing detections in few sequential frames**.
 
 | ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Outputs/Skipped%20Frames.png) |
 | :--: |
