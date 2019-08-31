@@ -20,11 +20,11 @@ This does not allow to record the road for 24-7, yet permits a reasonable cover 
 
 **81 videos were recorded (~14 hours and 13 GB in total)** over a month and a half.
 
-| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Videos%20data/Photography%20layout/stand2.jpg) |
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Videos%20data/Photography%20layout/stand2.jpg" width="480"> |
 | :--: |
 | The recording smartphone in action |
 
-| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Videos%20data/Metadata/Videos%20times%20cover.png) |
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Videos%20data/Metadata/Videos%20times%20cover.png" width="480"> |
 | :--: |
 | The cover of hours and weekdays by the recorded videos (each point represents a single video); did you know that [Thursday](https://www.timeanddate.com/calendar/days/thursday.html) is named after Thor son of Odin, the god of thunder? |
 
@@ -36,14 +36,14 @@ This package applies vehicles detection on the frames of the videos, namely trie
 
 Several out-of-the-box tools were tried, but seemed to fail due to the large density of small objects in the images.
 
-| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Detector/Out-of-the-box%20tools%20outputs/full_frame_SSD_on_top_of_MobileNet.png) |
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Detector/Out-of-the-box%20tools%20outputs/full_frame_SSD_on_top_of_MobileNet.png" width="480"> |
 | :--: |
 | Out-of-the-box SSD applied on a well-illuminated sample photo |
 
 Instead, a dedicated detector was trained in PyTorch as follows:
 - **Data pre-processing**: **15 video-frames were (manually) tagged** (out of 190K frames in the whole data) and (programatically) converted into anchor-boxes-based training-labels.
 
-| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Detector/Architecture/Anchor%20Boxes.png) |
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Detector/Architecture/Anchor%20Boxes.png" width="640"> |
 | :--: |
 | A sample of anchor boxes and their receptive field |
 
@@ -52,7 +52,7 @@ Instead, a dedicated detector was trained in PyTorch as follows:
     - An additional small location-based network was used to help to distinguish between vehicles in relevant and irrelevant roads.
     - The whole CNN was wrapped by filters removing detections with large overlaps or in irrelevant locations.
 
-| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Detector/Architecture/Network%20Architecture.PNG) |
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Detector/Architecture/Network%20Architecture.PNG" width="640"> |
 | :--: |
 | Detection network architecture |
 
@@ -64,7 +64,7 @@ Instead, a dedicated detector was trained in PyTorch as follows:
 
 The detector seems to yield quite good out-of-sample results, and even demonstrated reasonable results with as few as 3 training images.
 
-| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Detector/ROI%20outputs/full_frame_trained_night2318.PNG) |
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Detector/ROI%20outputs/full_frame_trained_night2318.PNG" width="640"> |
 | :--: |
 | Output sample of the trained detector applied on a dark photo with significant windows-reflecitons noise (the detector was trained to detect only vehicles in the road heading north after Hashalom interchange) |
 
@@ -80,14 +80,14 @@ However, **[*SORT*](https://arxiv.org/abs/1602.00763) tracker - upon which the f
 Since the assumption does not hold for the data in this project (with its fast-moving cars and only ~4 FPS in hyperlapse camera mode), the assignment mechanism was replaced with a [location-based probabilistic model implemented through a Kalman filter](https://github.com/ido90/AyalonRoad/tree/master/Tracker#kalman-filter-based-probabilistic-model-for-objects-assignment)**, expressing the large variance in the location of a vehicle along the direction of the road.
 The model basically asks "how likely is it for track `i` (given the road direction and the track history) to arrive within one frame to the location of the new-detection `j`?".
 
-| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Detections%20assignment/Tracker%20Prediction%20Field%201.png) |
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Detections%20assignment/Tracker%20Prediction%20Field%201.png" width="480"> |
 | :--: |
 | A vehicle (#18) with 3 non-intersecting bounding-boxes in 3 adjacent frames: the connection between the bounding-boxes cannot be based on intersection, but can be deduced from the Kalman-filter-based probabilistic model, whose output likelihoods are denoted by colored points (red for low likelihood and green for high likelihood) |
 
 The tracking was mostly applied on a continuously-visible interval of the road (north to Moses bridge).
 The modified tracking algorithm allows **successful tracking of most of the vehicles over most of the road interval, even in presence of missing detections in few sequential frames**.
 
-| ![](https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Outputs/Skipped%20Frames.png) |
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Tracker/Outputs/Skipped%20Frames.png" width="640"> |
 | :--: |
 | Tracking over gaps of missing detections: the red points mark the detected location of the tracked object over the various frames |
 
