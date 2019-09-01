@@ -1,17 +1,23 @@
 # Traffic Analysis in Original Video Data of Ayalon Road
 
-This repository tells the tail of 81 8-minute-long videos recording the traffic in *Ayalon Road* over a month and a half, as observed from the window in the appartment where I lived in 2019.
+This repository tells the tale of **81 8-minute-long videos recording the traffic in *Ayalon Road*** over a month and a half, as observed from the window in the appartment where I lived in 2019.
 My quest items included a laptop, a smartphone camera and a vacuum mobile holder for car.
 
-Analysis of the traffic required detection of vehicles in certain areas in the videos frames and tracking of a vehicle over sequential frames.
+Analysis of the traffic required **detection of vehicles** in certain areas in the videos frames and **tracking of a vehicle over sequential frames**.
 
-Since the small, crowded cars in the videos were failed to be detected by several out-of-the-box detectors, I manually tagged the vehicles within 15 frames and trained a dedicatedly-designed CNN (in the general spirit of *Faster RCNN*) consisting of pre-trained Resnet34 layers (chosen with accordance to the desired feature-map cell size and receptive field), location-based network (to incorporate road-map information), and a detection & location head.
+Since the small, crowded cars in the videos were failed to be detected by several out-of-the-box detectors, I manually tagged the vehicles within 15 frames and trained a **dedicatedly-designed CNN** (in the general spirit of *Faster RCNN*) consisting of pre-trained Resnet34 layers (chosen with accordance to the desired feature-map cell size and receptive field), location-based network (to incorporate road-map information), and a detection & location head.
 
-Since the low frame-rate could not guarantee intersection between the bounding-boxes of the same vehicle in adjacent frames, I replaced the assignment mechanism of *SORT* tracker with a location-based probabilistic model implemented through a Kalman filter.
+Since the low frame-rate could not guarantee intersection between the bounding-boxes of the same vehicle in adjacent frames, I replaced the assignment mechanism of *SORT* tracker with a **location-based probabilistic model implemented through a Kalman filter**.
 
 TODO analysis
 
-## Contents
+### Main contributions
+- **Original dataset of traffic in a major road**
+- **Detection of small, crowded objects in noisy images, trainable from little data**
+- **Tracking of fast-moving objects in low frame-rate videos with robustness to missing detections**
+- TODO analysis contribution
+
+### Contents
 - [Data gathering](#data-gathering) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/photographer)]
 - [Vehicles detection](#vehicles-detection) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Detector)]
 - [Paths tracking](#tracking) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Tracker)]
