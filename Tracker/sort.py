@@ -23,16 +23,14 @@
     - IOU was replaced with a location-based probabilistic model
     - KF parameters were tuned to fit the data of traffic aerial-imaging (e.g. prediction covariance matrix)
     - Irrelevant code was removed
+    - Compatibility issues with linear_sum_assignment were resolved
 """
 
 import os.path
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-from skimage import io
-from sklearn.utils.linear_assignment_ import linear_assignment
+from scipy.optimize import linear_sum_assignment
 import time
-import argparse
 from filterpy.kalman import KalmanFilter
 
 def convert_bbox_to_z(bbox):
@@ -162,25 +160,25 @@ def associate_detections_to_trackers(detections, trackers, Xs, Ps, threshold=1e-
       y = np.mean(det[[1,3]])
       likelihood_matrix[d,t] = A * np.exp(-0.5 * ((np.array((x, y))-MU) @ np.linalg.inv(SIGMA) @ (np.array((x, y))-MU)))
 
-  matched_indices = linear_assignment(-likelihood_matrix)
+  matched_indices = linear_sum_assignment(-likelihood_matrix)
 
   unmatched_detections = []
   for d,det in enumerate(detections):
-    if(d not in matched_indices[:,0]):
+    if(d not in matched_indices[0]):
       unmatched_detections.append(d)
   unmatched_trackers = []
   for t,trk in enumerate(trackers):
-    if(t not in matched_indices[:,1]):
+    if(t not in matched_indices[1]):
       unmatched_trackers.append(t)
 
   #filter out matched with low IOU
   matches = []
-  for m in matched_indices:
+  for m in zip(*matched_indices):
     if(likelihood_matrix[m[0],m[1]]<threshold):
       unmatched_detections.append(m[0])
       unmatched_trackers.append(m[1])
     else:
-      matches.append(m.reshape(1,2))
+      matches.append(np.array(m).reshape(1,2))
   if(len(matches)==0):
     matches = np.empty((0,2),dtype=int)
   else:
