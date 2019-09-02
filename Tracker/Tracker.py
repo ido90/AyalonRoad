@@ -499,14 +499,41 @@ def px2m(x, x_off=0):
     single_meter = car_len / 4.5
     return single_meter
 
+def remove_late_observations(X, Y, S, thresh, inplace=True):
+    # pre-processing - remove observations close to the end:
+    # detections often move to the back of the car, affecting estimated speed
+    too_late = X >= thresh
+    if inplace:
+        X.mask(too_late, inplace=True)
+        Y.mask(too_late, inplace=True)
+        S.mask(too_late, inplace=True)
+    else:
+        X = X.mask(too_late)
+        Y = Y.mask(too_late)
+        S = S.mask(too_late)
+    # the mask may lead to empty columns
+    empty_cols = X.columns[X.notna().sum() == 0]
+    X.drop(columns=empty_cols, inplace=True)
+    Y.drop(columns=empty_cols, inplace=True)
+    S.drop(columns=empty_cols, inplace=True)
+    if not inplace:
+        return X, Y, S
+
 
 def summarize_video(X, Y, S, W, H, video, videos_metadata=r'../Photographer/videos_metadata.csv',
-                    FPS=30/8, negative_motion_threshold=0.04,
+                    FPS=30/8, negative_motion_threshold=0.05, remove_observations_beyond=950,
                     short_path_threshold=0.6, # in certain frames the maximum is 0.7-0.8 due to a hiding bridge in the beginning
-                    to_save=True, verbose=True):
-    vdf = pd.read_csv(videos_metadata, index_col=0)
+                    inplace=True, to_save=True, verbose=True):
+    # pre-processing
+    if remove_observations_beyond is not None:
+        if inplace:
+            remove_late_observations(X, Y, S, remove_observations_beyond, inplace=True)
+        else:
+            X, Y, S = remove_late_observations(X, Y, S, remove_observations_beyond, inplace=False)
+    # initialize data frame
     df = pd.DataFrame(index=X.columns)
     # video info
+    vdf = pd.read_csv(videos_metadata, index_col=0)
     df['video'] = video
     df['vid_len'] = vdf.loc[video,'len_minutes']
     df['date'] = vdf.loc[video,'date']
