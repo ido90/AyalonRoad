@@ -487,18 +487,6 @@ def get_cars_direction(df):
     slope = np.median((df.dy/df.dx).dropna())
     return slope
 
-def px2m(x, x_off=0):
-    '''
-    Pixels to meters.
-    Based on linear fit from location to size in an image.
-    :param x: (horizontal) location in the image.
-    :param x_off: offset of the location (intended for cropped images).
-    :return: approximated number of pixels per meter in that location in the image.
-    '''
-    car_len = 60.76357 - 0.029524*(x+x_off) # ~4.5m
-    single_meter = car_len / 4.5
-    return single_meter
-
 def remove_late_observations(X, Y, S, thresh, inplace=True):
     # pre-processing - remove observations close to the end:
     # detections often move to the back of the car, affecting estimated speed
@@ -519,21 +507,84 @@ def remove_late_observations(X, Y, S, thresh, inplace=True):
     if not inplace:
         return X, Y, S
 
+def pixel_size(x, w=1920, x_off=0, inv=False):
+    '''
+    Pixel size in meters.
+    Based on linear fit from location to size in a sample of images.
+    Actual values for the cropped frames are 7.5-13 pixels in a meter.
+    :param x: (horizontal) location in the image.
+    :param w: x is measured backwards from w, which equals 1920 is the image is not cropped.
+    :return: approximated number of pixels per meter in that location in the image.
+    '''
+    car_len = 60.76357 - 0.029524*(w-x+x_off) # in pixels; ~4.5m
+    single_meter = car_len / 4.5
+    return single_meter if inv else 1/single_meter
 
-def summarize_video(X, Y, S, W, H, video, videos_metadata=r'../Photographer/videos_metadata.csv',
-                    FPS=30/8, negative_motion_threshold=0.05, remove_observations_beyond=950,
-                    short_path_threshold=0.6, # in certain frames the maximum is 0.7-0.8 due to a hiding bridge in the beginning
-                    inplace=True, to_save=True, verbose=True):
+def pixel2meter(x, w, x_off):
+    return x * pixel_size((x+w)/2, w, x_off)
+
+def p2m_x(x, video=None, area=None, x0=None):
+    if area is None:
+        area = get_cropped_frame_area(video)
+    if x0 is None:
+        x0 = 9 if video<'20190525_2000' else 1 if video<'20190526_1200' else 0
+    return pixel2meter(x, area[1]-area[0], area[0]) - x0
+
+def p2m_y(y, video=None, area=None):
+    if area is None:
+        area = get_cropped_frame_area(video)
+    return y * pixel_size((area[0]+area[1])/2, area[1]-area[0], area[0])
+
+def p2m_s(s, x, video=None, area=None):
+    if area is None:
+        area = get_cropped_frame_area(video)
+    return s * pixel_size(x, area[1]-area[0], area[0])
+
+def p2m_wh(W, H, video=None, area=None):
+    if area is None:
+        area = get_cropped_frame_area(video)
+    w = p2m_x(W,video) - p2m_x(0,video)
+    h = H * pixel_size(0, area[1]-area[0], area[0])
+    return w, h
+
+def interpolate_ref_point(y, x, x0):
+    before = np.logical_and(x.notnull(), x < x0)
+    after  = np.logical_and(x.notnull(), x > x0)
+    if np.any(before) and np.any(after):
+        x1 = np.where(before)[0][-1]
+        x2 = np.where(after)[0][0]
+        return y[x1] + (y[x2]-y[x1])*(x0-x[x1])/(x[x2]-x[x1])
+    else:
+        return np.nan
+
+
+def summarize_video(X, Y, S, video, W=None, H=None, videos_metadata=r'../Photographer/videos_metadata.csv',
+                    FPS=30/8, negative_motion_threshold=0.05, remove_observations_beyond=-70,
+                    short_path_threshold=0.6, # in certain frames the max is 0.7-0.8 due to a hiding bridge in the right
+                    meters=True, x_ref=np.arange(7,64,6), inplace=False, to_save=True, verbose=True):
     # pre-processing
+    area = get_cropped_frame_area(video)
+    if W is None:
+        W = area[1]-area[0]
+    if H is None:
+        H = area[3]-area[2]
     if remove_observations_beyond is not None:
+        if remove_observations_beyond <= 0:
+            remove_observations_beyond = (area[1]-area[0]) + remove_observations_beyond
         if inplace:
             remove_late_observations(X, Y, S, remove_observations_beyond, inplace=True)
         else:
             X, Y, S = remove_late_observations(X, Y, S, remove_observations_beyond, inplace=False)
+    if meters:
+        S = p2m_s(S, X, video)
+        X = p2m_x(X, video)
+        Y = p2m_y(Y, video)
+        W, H = p2m_wh(W, H, video)
     # initialize data frame
     df = pd.DataFrame(index=X.columns)
     # video info
     vdf = pd.read_csv(videos_metadata, index_col=0)
+    df['video_group'] = 1 + (video>'20190525_2000') + (video>'20190526_1200')
     df['video'] = video
     df['vid_len'] = vdf.loc[video,'len_minutes']
     df['date'] = vdf.loc[video,'date']
@@ -571,18 +622,54 @@ def summarize_video(X, Y, S, W, H, video, videos_metadata=r'../Photographer/vide
     df['abs_v'] = [np.sum( np.power( np.power(np.diff(X[car][X[car].notnull()]),2) +
                                     np.power(np.diff(Y[car][Y[car].notnull()]),2), 0.5 ) ) /
                    (X.index[X[car].notnull()][-1]-X.index[X[car].notnull()][0]) * FPS
-                   for car in X.columns]
+                   if len(X[car][X[car].notnull()])>1 else np.nan for car in X.columns]
+    df['v_sd'] = [np.std( np.power(
+        np.power(np.diff(X[car][X[car].notnull()])/np.diff(X.index[X[car].notnull()]),2) +
+        np.power(np.diff(Y[car][Y[car].notnull()])/np.diff(Y.index[Y[car].notnull()]),2), 0.5 ) ) * FPS
+                  if len(X[car][X[car].notnull()])>1 else np.nan for car in X.columns]
     slope = get_cars_direction(df)
+    df['road_slope'] = slope
     df['road_perpendicularity'] = [np.median( ((Y[car]-slope*X[car]) / np.sqrt((1+slope**2))).dropna() ) for car in X.columns]
     df['perpendicular_range'] = [np.ptp( ((Y[car]-slope*X[car]) / np.sqrt((1+slope**2))).dropna() ) for car in X.columns]
+    # reference points interpolation
+    # this should probably be done vectorically
+    for xr in x_ref:
+        df[f'y_{xr:.0f}'] = [interpolate_ref_point(Y[car], X[car], xr) for car in X.columns]
+    for xr in x_ref:
+        df[f't_{xr:.0f}'] = [interpolate_ref_point(np.array(X.index/FPS), X[car], xr) for car in X.columns]
+    for xr in x_ref:
+        df[f's_{xr:.0f}'] = [interpolate_ref_point(S[car], X[car], xr) for car in X.columns]
 
     if verbose:
         print('Data frame shape: ', df.shape)
 
     if to_save:
         df.to_csv(f'track_data/{video[:-4]:s}.csv', index_label='car')
+        if to_save >= 2:
+            with open(f'track_data/{video[:-4]:s}_processed.pkl', 'wb') as f:
+                pkl.dump({'X': X, 'Y': Y, 'S': S, 'W': W, 'H': H}, f)
 
-    return df
+    return df, X, Y, S, W, H
+
+
+def read_video_summary(video):
+    df = pd.read_csv(f'track_data/{video:s}.csv', index_col='car')
+    df.index = [str(i) for i in df.index]
+    with open(f'track_data/{video:s}_processed.pkl', 'rb') as f:
+        dct = pkl.load(f)
+        X, Y, S, W, H = dct['X'], dct['Y'], dct['S'], dct['W'], dct['H']
+    with open(f'track_data/{video:s}.pkl', 'rb') as f:
+        N = pkl.load(f)['N']
+    return df, X, Y, S, N, W, H
+
+def get_merged_summaries(meta=r'../Photographer/videos_metadata.csv', videos=None):
+    if videos is None:
+        vdf = pd.read_csv(meta, index_col=0)
+        videos = vdf.video.values
+    return pd.concat([
+        pd.read_csv(f'track_data/{video:s}.csv')
+        for video in videos
+    ])
 
 
 ##############################################
@@ -605,7 +692,7 @@ def qplot(x, ax=None, ylab='', logscale=False, assume_sorted=False):
     try:
         x = x[x.notnull()]
     except:
-        x = x[np.logical_not(np.isnan(x))]
+        x = np.array(x)[np.logical_not(np.isnan(x))]
     if not assume_sorted:
         x = sorted(x)
 
