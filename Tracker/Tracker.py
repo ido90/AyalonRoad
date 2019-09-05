@@ -652,24 +652,36 @@ def summarize_video(X, Y, S, video, W=None, H=None, videos_metadata=r'../Photogr
     return df, X, Y, S, W, H
 
 
-def read_video_summary(video):
-    df = pd.read_csv(f'track_data/{video:s}.csv', index_col='car')
+def read_video_summary(video, base_path=Path('../Tracker')):
+    df = pd.read_csv(base_path/f'track_data/{video:s}.csv', index_col='car')
     df.index = [str(i) for i in df.index]
-    with open(f'track_data/{video:s}_processed.pkl', 'rb') as f:
+    with open(base_path/f'track_data/{video:s}_processed.pkl', 'rb') as f:
         dct = pkl.load(f)
         X, Y, S, W, H = dct['X'], dct['Y'], dct['S'], dct['W'], dct['H']
-    with open(f'track_data/{video:s}.pkl', 'rb') as f:
+    with open(base_path/f'track_data/{video:s}.pkl', 'rb') as f:
         N = pkl.load(f)['N']
     return df, X, Y, S, N, W, H
 
 def get_merged_summaries(meta=r'../Photographer/videos_metadata.csv', videos=None):
     if videos is None:
         vdf = pd.read_csv(meta, index_col=0)
-        videos = vdf.video.values
+        videos = [v[:-4] for v in vdf.video.values]
     return pd.concat([
         pd.read_csv(f'track_data/{video:s}.csv')
         for video in videos
     ])
+
+def filter_merged_summary(df, constraints=('long_path','valid_x_dir','consistent_xy_nas'), verbose=1):
+    for constraint in constraints:
+        if verbose >= 1:
+            g = df.groupby('video')
+            g = g[constraint].mean().values
+            print(f'{constraint:s}:\t{100*g.mean():.0f}% ({100*g.min():.0f}%-{100*g.max():.0f}%)')
+            if verbose >= 2 and g.max()>0:
+                qplot(100*g, ylab=constraint+' [% of videos]')
+                plt.show()
+        df = df[df[constraint]]
+    return df
 
 
 ##############################################
@@ -685,7 +697,7 @@ def ordered_counter(tokens):
     return OrderedDict(sorted(Counter([tok for grp in tokens for tok in grp]).items(),
                               key=lambda kv: kv[1], reverse=True))
 
-def qplot(x, ax=None, ylab='', logscale=False, assume_sorted=False):
+def qplot(x, ax=None, ylab='', logscale=False, assume_sorted=False, showmean=True):
     if ax is None:
         ax = plt.gca()
     n_orig = len(x)
@@ -696,7 +708,8 @@ def qplot(x, ax=None, ylab='', logscale=False, assume_sorted=False):
     if not assume_sorted:
         x = sorted(x)
 
-    ax.axhline(np.mean(x), linestyle=':', color='blue', label='Average')
+    if showmean:
+        ax.axhline(np.mean(x), linestyle=':', color='blue', label='Average')
     ax.plot(list(range(101)), [x[int(q / 100 * (len(x) - 1))] for q in range(101)], 'k.-')
     ax.set_xlabel('Quantile [%]')
     ax.set_ylabel(ylab)
@@ -705,7 +718,8 @@ def qplot(x, ax=None, ylab='', logscale=False, assume_sorted=False):
     if logscale:
         ax.set_yscale('log')
     ax.grid()
-    ax.legend()
+    if showmean:
+        ax.legend()
 
 def qplots(X, ax=None, logscale=False, assume_sorted=False):
     colors = get_colors()
