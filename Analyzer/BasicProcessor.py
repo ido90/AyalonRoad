@@ -156,6 +156,16 @@ def video_spatial_summary(df, X, N, x_ref=X_REF, constraints=None, n_lines=5, FP
                                     np.power( tmp.loc[i,f'y_{x2:.0f}'] - tmp.loc[i,f'y_{x1:.0f}'] , 2 )
                             ) / ( tmp.loc[i,f't_{x2:.0f}'] - tmp.loc[i,f't_{x1:.0f}'] ) ] )
                  if i.sum()>0 else np.nan for t0,i in zip(sdf.t,ids)]
+            # TODO REMOVE
+            # ids = ( ( (tmp[f't_{x1:.0f}']<t0) & (t0<=tmp[f't_{x2:.0f}']) ) for t0 in sdf.t)
+            # sdf[f'vx_x{x1:.0f}to{x2:.0f}_l{l:.0f}'] = \
+            #     [np.mean( [ ( x2 - x1) / ( tmp.loc[i,f't_{x2:.0f}'] - tmp.loc[i,f't_{x1:.0f}'] ) ] )
+            #      if i.sum()>0 else np.nan for t0,i in zip(sdf.t,ids)]
+            # ids = ( ( (tmp[f't_{x1:.0f}']<t0) & (t0<=tmp[f't_{x2:.0f}']) ) for t0 in sdf.t)
+            # sdf[f'vy_x{x1:.0f}to{x2:.0f}_l{l:.0f}'] = \
+            #     [np.mean( [ ( tmp.loc[i,f'y_{x2:.0f}'] - tmp.loc[i,f'y_{x1:.0f}'])
+            #                 /(tmp.loc[i,f't_{x2:.0f}'] - tmp.loc[i,f't_{x1:.0f}'] ) ] )
+            #      if i.sum()>0 else np.nan for t0,i in zip(sdf.t,ids)]
 
     return sdf
 
