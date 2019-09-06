@@ -33,6 +33,8 @@ import DetectorNetwork as dn
 
 # POST ANALYSIS: post analysis of tracked data.
 
+# PIXELS <-> METERS transformations.
+
 # STATS & DISPLAY TOOLS: more general tools for basic statistics & display that I really should put in a generic module.
 
 
@@ -507,46 +509,6 @@ def remove_late_observations(X, Y, S, thresh, inplace=True):
     if not inplace:
         return X, Y, S
 
-def pixel_size(x, w=1920, x_off=0, inv=False):
-    '''
-    Pixel size in meters.
-    Based on linear fit from location to size in a sample of images.
-    Actual values for the cropped frames are 7.5-13 pixels in a meter.
-    :param x: (horizontal) location in the image.
-    :param w: x is measured backwards from w, which equals 1920 is the image is not cropped.
-    :return: approximated number of pixels per meter in that location in the image.
-    '''
-    car_len = 60.76357 - 0.029524*(w-x+x_off) # in pixels; ~4.5m
-    single_meter = car_len / 4.5
-    return single_meter if inv else 1/single_meter
-
-def pixel2meter(x, w, x_off):
-    return x * pixel_size((x+w)/2, w, x_off)
-
-def p2m_x(x, video=None, area=None, x0=None):
-    if area is None:
-        area = get_cropped_frame_area(video)
-    if x0 is None:
-        x0 = 9 if video<'20190525_2000' else 1 if video<'20190526_1200' else 0
-    return pixel2meter(x, area[1]-area[0], area[0]) - x0
-
-def p2m_y(y, video=None, area=None):
-    if area is None:
-        area = get_cropped_frame_area(video)
-    return y * pixel_size((area[0]+area[1])/2, area[1]-area[0], area[0])
-
-def p2m_s(s, x, video=None, area=None):
-    if area is None:
-        area = get_cropped_frame_area(video)
-    return s * pixel_size(x, area[1]-area[0], area[0])
-
-def p2m_wh(W, H, video=None, area=None):
-    if area is None:
-        area = get_cropped_frame_area(video)
-    w = p2m_x(W,video) - p2m_x(0,video)
-    h = H * pixel_size(0, area[1]-area[0], area[0])
-    return w, h
-
 def interpolate_ref_point(y, x, x0):
     before = np.logical_and(x.notnull(), x < x0)
     after  = np.logical_and(x.notnull(), x > x0)
@@ -561,7 +523,7 @@ def interpolate_ref_point(y, x, x0):
 def summarize_video(X, Y, S, video, W=None, H=None, videos_metadata=r'../Photographer/videos_metadata.csv',
                     FPS=30/8, negative_motion_threshold=0.05, remove_observations_beyond=-70,
                     short_path_threshold=0.6, # in certain frames the max is 0.7-0.8 due to a hiding bridge in the right
-                    meters=True, x_ref=np.arange(7,64,6), inplace=False, to_save=True, verbose=True):
+                    meters=True, x_ref=np.arange(20,81,6), inplace=False, to_save=True, verbose=True):
     # pre-processing
     area = get_cropped_frame_area(video)
     if W is None:
@@ -579,7 +541,7 @@ def summarize_video(X, Y, S, video, W=None, H=None, videos_metadata=r'../Photogr
         S = p2m_s(S, X, video)
         X = p2m_x(X, video)
         Y = p2m_y(Y, video)
-        W, H = p2m_wh(W, H, video)
+        W, H = p2m_wh(video)
     # initialize data frame
     df = pd.DataFrame(index=X.columns)
     # video info
@@ -652,12 +614,18 @@ def summarize_video(X, Y, S, video, W=None, H=None, videos_metadata=r'../Photogr
     return df, X, Y, S, W, H
 
 
-def read_video_summary(video, base_path=Path('../Tracker')):
+def read_video_summary(video, base_path=Path('../Tracker'), filtered=False, verbose=0):
     df = pd.read_csv(base_path/f'track_data/{video:s}.csv', index_col='car')
     df.index = [str(i) for i in df.index]
     with open(base_path/f'track_data/{video:s}_processed.pkl', 'rb') as f:
         dct = pkl.load(f)
         X, Y, S, W, H = dct['X'], dct['Y'], dct['S'], dct['W'], dct['H']
+    if filtered:
+        df = filter_merged_summary(df, verbose=verbose)
+        all_cars = df.index
+        X = X[np.array(all_cars)]
+        Y = Y[np.array(all_cars)]
+        S = S[np.array(all_cars)]
     with open(base_path/f'track_data/{video:s}.pkl', 'rb') as f:
         N = pkl.load(f)['N']
     return df, X, Y, S, N, W, H
@@ -682,6 +650,103 @@ def filter_merged_summary(df, constraints=('long_path','valid_x_dir','consistent
                 plt.show()
         df = df[df[constraint]]
     return df
+
+
+##############################################
+############### PIXELS <-> METERS
+##############################################
+
+def rev_x(x, area, w):
+    if w is None:
+        w = 1920 if area is None else area[1]-area[0]
+    return w - x
+
+def xcropped2xfull(xc, area=None, x_off=None):
+    if x_off is None:
+        x_off = 0 if area is None else area[0]
+    xf = xc + x_off
+    return xf
+
+def ycropped2yfull(yc, area=None, y_off=None):
+    if y_off is None:
+        y_off = 0 if area is None else area[2]
+    yf = yc + y_off
+    return yf
+
+def x_rev_and_stretch(x, video=None, area=None, w=None, x_off=None):
+    if area is None and video is not None:
+        area = get_cropped_frame_area(video)
+    x = rev_x(x, area, w)
+    return xcropped2xfull(x, area, x_off)
+
+def pixel_size(x, video=None, area=None, w=None, x_off=None, car_meters=4.5, inv=False):
+    '''
+    Pixel size in meters.
+    Based on linear fit from location to size in a sample of images.
+    Actual values for the cropped frames are 7.5-13 pixels in a meter.
+    :param x: (horizontal) location in the image.
+    :return: approximated number of pixels per meter in that location in the image.
+    '''
+    x = x_rev_and_stretch(x, video, area, w, x_off)
+    car_len = 60.76357 - 0.029524 * x
+    single_meter = car_len / car_meters
+    return single_meter if inv else 1 / single_meter
+
+def p2m_x(x, video=None, area=None, x0=None, **kwargs):
+    if x0 is None:
+        x0 = 0 if video is None else 101 if video<'20190525_2000' else 12 if video<'20190526_1200' else 7
+    avg_pixel_size = pixel_size((x+x0)/2, video, area, **kwargs)
+    return avg_pixel_size * (x - x0)
+
+def get_m2p_map(video=None, area=None, x0=None, w=None, resolution=100, **kwargs):
+    if area is None and video is not None:
+        area = get_cropped_frame_area(video)
+    if w is None:
+        w = 1920 if area is None else area[1]-area[0]
+    x = np.linspace(0, w, num=resolution)
+    return p2m_x(x, video, area, x0, **kwargs), x
+
+def m2p_x(x, video=None, area=None, **kwargs):
+    xp, fp = get_m2p_map(video=video, area=area, **kwargs)
+    return np.interp(x, xp, fp)
+
+def meters_to_global_pixels_x(x, video=None, area=None):
+    return x_rev_and_stretch(m2p_x(x, video, area), video, area)
+
+def p2m_y(y, video=None, area=None, y0=None, inv=False, **kwargs):
+    if area is None:
+        area = (0,1920,0,1080) if video is None else get_cropped_frame_area(video)
+    if y0 is None:
+        y0 = 0 if video is None else 74 if video<'20190525_2000' else 98 if video<'20190526_1200' else 5
+    avg_pixel_size = pixel_size((area[0]+area[1])/2, video, area, **kwargs)
+    return avg_pixel_size * (y - y0) if not inv else y / avg_pixel_size + y0
+
+def m2p_y(y, video=None, area=None, y0=None, **kwargs):
+    return p2m_y(y, video, area, y0, inv=True, **kwargs)
+
+def meters_to_global_pixels_y(y, video=None, area=None):
+    return ycropped2yfull(m2p_y(y, video, area), area)
+
+def p2m_s(s, x, video=None, area=None, **kwargs):
+    # note: s,x in pixels
+    if area is None:
+        area = (0,1920,0,1080) if video is None else get_cropped_frame_area(video)
+    return s * pixel_size(x, video, area, **kwargs)
+
+def m2p_s(s, x, video=None, area=None, **kwargs):
+    # note: s,x in meters
+    if area is None:
+        area = (0,1920,0,1080) if video is None else get_cropped_frame_area(video)
+    return s * pixel_size(m2p_x(x,video,area), video, area, inv=True, **kwargs)
+
+def p2m_wh(video=None, area=None):
+    if area is None:
+        area = (0,1920,0,1080) if video is None else get_cropped_frame_area(video)
+    W = area[1] - area[0]
+    H = area[3] - area[2]
+    w = p2m_x(W,video) - p2m_x(0,video)
+    h = H * pixel_size(0, video, area)
+    return w, h
 
 
 ##############################################

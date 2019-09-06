@@ -17,7 +17,7 @@ from sklearn.cluster import KMeans
 if '../Tracker' not in sys.path: sys.path.append('../Tracker')
 import Tracker as t
 
-X_REF = np.arange(7,64,6)
+X_REF = np.arange(20,81,6)
 
 
 #################################################
@@ -29,13 +29,16 @@ X_REF = np.arange(7,64,6)
 # SPATIAL SUMMARY: location-oriented information
 #                  (e.g. what's the speed in a certain lane at a certain road interval)
 
+# Note: part of the initial processing (pixels-to-meters conversion, per-car data-frame)
+#       is done in Tracker/Tracker.py due to historical dependencies.
+
 
 #################################################
 ###########   BASIC INTERFACE
 #################################################
 
-def load_video_summary(video, base_path=Path('../Tracker')):
-    df, X, Y, S, N, W, H = t.read_video_summary(video, base_path=base_path)
+def load_video_summary(video, base_path=Path('../Tracker'), **kwargs):
+    df, X, Y, S, N, W, H = t.read_video_summary(video, base_path=base_path, **kwargs)
     with open(base_path/f'track_data/{video:s}_lanes.pkl', 'rb') as f:
         lanes = pkl.load(f)
     return df, X, Y, S, N, W, H, lanes
@@ -92,22 +95,32 @@ def plot_lanes(video, frame, ax=None,
     with open(track_path/f'track_data/{video:s}_lanes.pkl', 'rb') as f:
         centers = pkl.load(f)
     x = sorted(list(centers.keys()))
+    x = t.meters_to_global_pixels_x(x, video)
     # prepare axes
     if ax is None:
         ax = plt.gca()
     # plot
-    # ax.imshow(I)
+    ax.imshow(I)
     for l in range(len(list(centers.values())[0])-1):
-        y = [(centers[xx][l]+centers[xx][l+1])/2 for xx in centers]
+        y = np.array([(centers[xx][l]+centers[xx][l+1])/2 for xx in centers])
+        y = t.meters_to_global_pixels_y(y, video)
         ax.plot(x[0], y[0], 'rs')
-        ax.plot(x, y, 'r.-')
+        ax.plot(x, y, 'r.--', linewidth=1)
 
 
 #################################################
 ###########   SPATIAL SUMMARY
 #################################################
 
-def video_spatial_summary(df, X, N, x_ref=X_REF, n_lines=5, FPS=30/8):
+def video_spatial_summary(df, X, N, x_ref=X_REF, constraints=None, n_lines=5, FPS=30/8, verbose=1):
+    # Filter invalid tracks
+    if constraints is not None:
+        if constraints == True:
+            df = t.filter_merged_summary(df, verbose=verbose)
+        else:
+            # assuming constraints is a list of constraints names
+            df = t.filter_merged_summary(df, constraints, verbose=verbose)
+
     # Assuming df is filtered and X is not - remove the filtered cars from X as well
     all_cars = df.cars if 'cars' in df.columns else df.index
     X = X.loc[:, [car for car in X.columns if car in all_cars]]
@@ -146,22 +159,26 @@ def video_spatial_summary(df, X, N, x_ref=X_REF, n_lines=5, FPS=30/8):
 
     return sdf
 
-def save_spatial_summaries(meta=r'../Photographer/videos_metadata.csv', videos=None,
-                           base_path=Path('../Tracker'), notebook=False, **kwargs):
+def save_spatial_summaries(meta=r'../Photographer/videos_metadata.csv', videos=None, do_filter=False,
+                           base_path=Path('../Tracker'), suffix=None, notebook=False, **kwargs):
+    # Initialization
+    if suffix is None:
+        suffix = 'spatial_filtered' if do_filter else 'spatial'
     if videos is None:
         vdf = pd.read_csv(meta, index_col=0)
         videos = [v[:-4] for v in vdf.video.values]
+    # Create spatial summaries
     for video in (tqdm_notebook(videos) if notebook else videos):
-        df, X, _, _, N, _, _ = t.read_video_summary(video, base_path=base_path)
+        df, X, _, _, N, _, _ = t.read_video_summary(video, base_path=base_path, filtered=do_filter)
         sdf = video_spatial_summary(df, X, N, **kwargs)
-        sdf.to_csv(base_path/f'track_data/{video:s}_spatial.csv', index=False)
+        sdf.to_csv(base_path/f'track_data/{video:s}_{suffix:s}.csv', index=False)
 
-def merge_spatial_summaries(meta=r'../Photographer/videos_metadata.csv', videos=None,
-                            base_path=Path('../Tracker'), to_save=False, filename='summary_per_area'):
+def merge_spatial_summaries(meta=r'../Photographer/videos_metadata.csv', videos=None, base_path=Path('../Tracker'),
+                            suffix='spatial', to_save=False, filename='summary_per_area'):
     if videos is None:
         vdf = pd.read_csv(meta, index_col=0)
         videos = [v[:-4] for v in vdf.video.values]
-    sdf = pd.concat([pd.read_csv(base_path/f'track_data/{video:s}_spatial.csv') for video in videos])
+    sdf = pd.concat([pd.read_csv(base_path/f'track_data/{video:s}_{suffix:s}.csv') for video in videos])
     if to_save:
         sdf.to_csv(base_path/f'track_data/{filename:s}.csv', index=False)
     return sdf
