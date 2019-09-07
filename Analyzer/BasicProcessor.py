@@ -181,7 +181,9 @@ def save_spatial_summaries(meta=r'../Photographer/videos_metadata.csv', videos=N
     for video in (tqdm_notebook(videos) if notebook else videos):
         df, X, _, _, N, _, _ = t.read_video_summary(video, base_path=base_path, filtered=do_filter)
         sdf = video_spatial_summary(df, X, N, **kwargs)
+        sdf.insert(0, 'video', video)
         sdf.to_csv(base_path/f'{video:s}_{suffix:s}.csv', index=False)
+        gc.collect()
 
 def merge_spatial_summaries(meta=r'../Photographer/videos_metadata.csv', videos=None, base_path=DATA_DIR,
                             suffix='spatial', to_save=False, filename='summary_per_area'):
