@@ -67,7 +67,7 @@ def get_cols(df, base_name, return_data=False):
     cols = [c for c in df.columns if c[:-2]==base_name]
     return df[cols] if return_data else cols
 
-# Recommended args for visualize_video():
+# Useful args for visualize_video():
 # frame0 (int), goal_frame (int),
 # boxes, dots, all_active_tracks, all_detections, show_scores, self_track (int), extra_frames (int),
 # display (int), save_frame (path), save_video (path), title (str), verbose
@@ -292,4 +292,22 @@ def merge_spatial_summaries(meta=r'../Photographer/videos_metadata.csv', videos=
     if to_save:
         sdf.to_csv(base_path/f'{filename:s}.csv', index=False)
     return sdf
+
+
+#################################################
+###########   DETECTIONS COUNT
+#################################################
+
+def detections_count(meta=r'../Photographer/videos_metadata.csv', videos=None, base_path=DATA_DIR):
+    if videos is None:
+        videos = get_all_videos(meta)
+    df = pd.DataFrame(index=videos, columns=('video','n_frames','n_detections','detections_per_frame'))
+    for video in videos:
+        with open(base_path/f'{video:s}.pkl', 'rb') as f:
+            N = pkl.load(f)['N']
+        df.loc[video, 'video'] = video
+        df.loc[video, 'n_frames'] = len(N)
+        df.loc[video, 'n_detections'] = np.sum(N)
+        df.loc[video, 'detections_per_frame'] = np.mean(N)
+    return df
 
