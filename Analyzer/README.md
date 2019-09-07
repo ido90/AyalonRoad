@@ -44,7 +44,7 @@ The distributions of the detected vehicles sizes (shown above) and speeds (below
 
 | <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Sanity/Speed%20per%20lane%20and%20interval.png" width="640"> |
 | :--: |
-| Distributions of vehicles speed within all the data - per lane (lane 1 is the rightmost) and road interval (measured from 0=beginning of visible road) |
+| Distributions of vehicles speed within all the data - per lane (lane 1 is the rightmost) and road-interval (measured from 0=beginning of visible road) |
 
 #### Interpolation to grid points
 Every vehicle in the data was tracked in the arbitrary locations where it had been detected in the relevant frames.
@@ -68,3 +68,16 @@ In spite of the challenges, a **simple *K-means* seems to have yielded reasonabl
 | Clustering of lanes in a video |
 
 The approach of equally-slicing the range of the vehicles vertical locations was considered and denied due to its sensitivity to outliers, which may cause significant hard-to-notice inaccuracies.
+
+
+## Lane transitions
+
+In the data of **82K vehicles over 60 meters, 24K lane-transitions were detected**.
+In a random sample of 10 detected transitions that were visually examined, **50% were found to be false-detections** (e.g. due to being close to the edge of a lane, or due to tracking-confusions in presence of dense traffic and missing detections).
+This leaves us with an estimated average of **1 lane transition per 7 vehicles** in the observed road-interval (note that some vehicles change more than one lane).
+
+Furthermore, it is evident that the **lane transitions are mostly concentrated in the right lanes** - near the adjacent entrace (of *Hashalom* interchange) and exit (of *Arlozorov* interchange).
+
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Lane%20transitions/Lane%20transitions%20count.png" width="640"> |
+| :--: |
+| Count of detected lane transitions per lane and road-interval (50% of the detected transitions are estimated to be false-positives) |
