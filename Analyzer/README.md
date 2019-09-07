@@ -49,10 +49,22 @@ The distributions of the detected vehicles sizes (shown above) and speeds (below
 #### Interpolation to grid points
 Every vehicle in the data was tracked in the arbitrary locations where it had been detected in the relevant frames.
 In order to normalize all the vehicles to consistent and comparable tracks representation:
-- 11 horizontal locations were chosen as a constant grid.
-- The state of a vehicle (time, size, y-location) in a grid point (x) was approximated using simple linear interpolation from the vehicle's last detection before x to its first detection after x.
+- **11 horizontal locations were chosen as a constant grid**.
+- The state of a vehicle (time, size, y-location) in a grid point (x) was approximated using **simple linear interpolation** from the vehicle's last detection before x to its first detection after x.
 - No extrapolation: nan was assigned wherever the vehicle hadn't been detected both before and after x.
 
 #### Lanes clustering
+For every video, for every horizontal location x (out of the 11 constant points described above), the vehicles passing through x were **clustered by their vertical locations into 5 groups representing the 5 lanes of the road**.
 
-using K-means with quantiles 10,30,50,70,90 as initial class-centers
+The clustering had **several challenges**:
+- The number of vehicles may vary between lanes (especially in short videos).
+- The rightmost lane is wider to the point of allowing 2 adjacent vehicles in its beginning, hence corresponds to a more heterogeneous cluster.
+- High vehicles are sometimes detected higher in the road, i.e. to the right of their lane, which disrupts the distinction between the lanes.
+
+In spite of the challenges, a **simple *K-means* seems to have yielded reasonable results**. The algorithm was **initialized with class-centers corresponding to the quantiles 10,30,50,70,90 of the vehicles vertical locations**.
+
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Sanity/Lanes%20clustering%20-%2020190520_105429.png" width="240"> <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Sanity/Lanes%20borders%20-%2020190520_105429.png" width="480"> |
+| :--: |
+| Clustering of lanes in a video |
+
+The approach of equally-slicing the range of the vehicles vertical locations was considered and denied due to its sensitivity to outliers, which may cause significant hard-to-notice inaccuracies.
