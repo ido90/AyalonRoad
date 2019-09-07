@@ -15,15 +15,19 @@ Note that some of the processing was already done in the Tracker package for deb
 
 | Structure | Keys | Values | Usage example | Preliminary processing | Source code |
 | --- | --- | --- | --- | --- | --- |
-| **Raw tracking logs** | time, vehicle | x, y | Get all detected locations of a car in a video | [Pixels-to-meters transformation](#pixels-to-meters-transformation) | Tracker/Tracker.py |
+| **Raw tracking logs** | time, vehicle | x, y | Get all detected locations of a vehicle in a video | [Pixels-to-meters transformation](#pixels-to-meters-transformation) | Tracker/Tracker.py |
 | **Per-vehicle** | vehicle, road-interval | time, y, speed, etc. | Get speed distribution per some group of videos | [Interpolation to grid points](#interpolation-to-grid-points) | Tracker/Tracker.py |
-| **Spatial** | time, lane, road-interval | number of vehicles, speed | Get speed distribution per lane | [Clustering to lanes](lanes-clustering) | Analyzer/BasicProcessor.py |
+| **Spatial** | time, lane, road-interval | number of vehicles, speed | Get speed distribution per lane | [Clustering to lanes](#lanes-clustering) | Analyzer/BasicProcessor.py |
 
 #### Pixels-to-meters transformation
 
 
 #### Interpolation to grid points
-
+Every vehicle in the data was tracked in the arbitrary locations where it had been detected in the relevant frames.
+In order to normalize all the vehicles to consistent and comparable tracks representation:
+- 11 horizontal locations were chosen as a constant grid.
+- The state of a vehicle (time, size, y-location) in a grid point (x) was approximated using simple linear interpolation from the vehicle's last detection before x to its first detection after x.
+- No extrapolation: nan was assigned wherever the vehicle hadn't been detected both before and after x.
 
 #### Lanes clustering
 
