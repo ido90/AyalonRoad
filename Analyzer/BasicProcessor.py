@@ -37,16 +37,28 @@ X_REF = np.arange(20,81,6)
 ###########   BASIC INTERFACE
 #################################################
 
-def load_video_summary(video, base_path=Path('../Tracker'), **kwargs):
+VIDEOS_DIR = Path(r'D:\Media\Videos\Ayalon')
+DATA_DIR = Path('../Tracker/track_data')
+
+def get_all_videos(meta=r'../Photographer/videos_metadata.csv'):
+    vdf = pd.read_csv(meta, index_col=0)
+    return [v[:-4] for v in vdf.video.values]
+
+def load_video_summary(video, base_path=DATA_DIR, **kwargs):
     df, X, Y, S, N, W, H = t.read_video_summary(video, base_path=base_path, **kwargs)
-    with open(base_path/f'track_data/{video:s}_lanes.pkl', 'rb') as f:
+    with open(base_path/f'{video:s}_lanes.pkl', 'rb') as f:
         lanes = pkl.load(f)
     return df, X, Y, S, N, W, H, lanes
 
-def load_data_summary(base_path=Path('../Tracker'), per_car='summary_per_car', spatial='summary_per_area'):
-    df  = pd.read_csv(base_path/f'track_data/{per_car:s}.csv')
-    sdf = pd.read_csv(base_path/f'track_data/{spatial:s}.csv')
+def load_data_summary(base_path=DATA_DIR, per_car='summary_per_car', spatial='summary_per_area'):
+    df  = pd.read_csv(base_path/f'{per_car:s}.csv')
+    sdf = pd.read_csv(base_path/f'{spatial:s}.csv')
     return df, sdf
+
+def video_filtered_tracks_rate(video, base_path=DATA_DIR):
+    df = pd.read_csv(base_path/f'{video:s}.csv')
+    df_filtered = t.filter_merged_summary(df, verbose=0)
+    return 1-df_filtered.shape[0]/df.shape[0], df_filtered.shape[0], df.shape[0]
 
 
 #################################################
@@ -75,24 +87,23 @@ def cluster_lanes(df, x_ref=X_REF, n_lanes=5, show_lanes=None):
     return centers
 
 def cluster_lanes_for_all_videos(meta=r'../Photographer/videos_metadata.csv', videos=None,
-                                 base_path=Path('../Tracker'), **kwargs):
+                                 base_path=DATA_DIR, **kwargs):
     if videos is None:
-        vdf = pd.read_csv(meta, index_col=0)
-        videos = [v[:-4] for v in vdf.video.values]
+        videos = get_all_videos(meta)
     for video in videos:
-        df = pd.read_csv(base_path/f'track_data/{video:s}.csv', index_col='car')
+        df = pd.read_csv(base_path/f'{video:s}.csv', index_col='car')
         centers = cluster_lanes(df, **kwargs)
-        df.to_csv(base_path/f'track_data/{video:s}.csv', index_label='car')
-        with open(base_path/f'track_data/{video:s}_lanes.pkl', 'wb') as f:
+        df.to_csv(base_path/f'{video:s}.csv', index_label='car')
+        with open(base_path/f'{video:s}_lanes.pkl', 'wb') as f:
             pkl.dump(centers, f)
 
 def plot_lanes(video, frame, ax=None,
-               video_path=Path(r'D:\Media\Videos\Ayalon'), track_path=Path('../Tracker')):
+               video_path=VIDEOS_DIR, track_path=DATA_DIR):
     # load video
     vid = t.load_video(str(video_path/f'{video:s}.mp4'))[0]
     I = t.read_frame(vid, skip=frame, cut_area=t.get_cropped_frame_area(video))
     # load centers
-    with open(track_path/f'track_data/{video:s}_lanes.pkl', 'rb') as f:
+    with open(track_path/f'{video:s}_lanes.pkl', 'rb') as f:
         centers = pkl.load(f)
     x = sorted(list(centers.keys()))
     x = t.meters_to_global_pixels_x(x, video)
@@ -156,40 +167,28 @@ def video_spatial_summary(df, X, N, x_ref=X_REF, constraints=None, n_lines=5, FP
                                     np.power( tmp.loc[i,f'y_{x2:.0f}'] - tmp.loc[i,f'y_{x1:.0f}'] , 2 )
                             ) / ( tmp.loc[i,f't_{x2:.0f}'] - tmp.loc[i,f't_{x1:.0f}'] ) ] )
                  if i.sum()>0 else np.nan for t0,i in zip(sdf.t,ids)]
-            # TODO REMOVE
-            # ids = ( ( (tmp[f't_{x1:.0f}']<t0) & (t0<=tmp[f't_{x2:.0f}']) ) for t0 in sdf.t)
-            # sdf[f'vx_x{x1:.0f}to{x2:.0f}_l{l:.0f}'] = \
-            #     [np.mean( [ ( x2 - x1) / ( tmp.loc[i,f't_{x2:.0f}'] - tmp.loc[i,f't_{x1:.0f}'] ) ] )
-            #      if i.sum()>0 else np.nan for t0,i in zip(sdf.t,ids)]
-            # ids = ( ( (tmp[f't_{x1:.0f}']<t0) & (t0<=tmp[f't_{x2:.0f}']) ) for t0 in sdf.t)
-            # sdf[f'vy_x{x1:.0f}to{x2:.0f}_l{l:.0f}'] = \
-            #     [np.mean( [ ( tmp.loc[i,f'y_{x2:.0f}'] - tmp.loc[i,f'y_{x1:.0f}'])
-            #                 /(tmp.loc[i,f't_{x2:.0f}'] - tmp.loc[i,f't_{x1:.0f}'] ) ] )
-            #      if i.sum()>0 else np.nan for t0,i in zip(sdf.t,ids)]
 
     return sdf
 
 def save_spatial_summaries(meta=r'../Photographer/videos_metadata.csv', videos=None, do_filter=False,
-                           base_path=Path('../Tracker'), suffix=None, notebook=False, **kwargs):
+                           base_path=DATA_DIR, suffix=None, notebook=False, **kwargs):
     # Initialization
     if suffix is None:
         suffix = 'spatial_filtered' if do_filter else 'spatial'
     if videos is None:
-        vdf = pd.read_csv(meta, index_col=0)
-        videos = [v[:-4] for v in vdf.video.values]
+        videos = get_all_videos(meta)
     # Create spatial summaries
     for video in (tqdm_notebook(videos) if notebook else videos):
         df, X, _, _, N, _, _ = t.read_video_summary(video, base_path=base_path, filtered=do_filter)
         sdf = video_spatial_summary(df, X, N, **kwargs)
-        sdf.to_csv(base_path/f'track_data/{video:s}_{suffix:s}.csv', index=False)
+        sdf.to_csv(base_path/f'{video:s}_{suffix:s}.csv', index=False)
 
-def merge_spatial_summaries(meta=r'../Photographer/videos_metadata.csv', videos=None, base_path=Path('../Tracker'),
+def merge_spatial_summaries(meta=r'../Photographer/videos_metadata.csv', videos=None, base_path=DATA_DIR,
                             suffix='spatial', to_save=False, filename='summary_per_area'):
     if videos is None:
-        vdf = pd.read_csv(meta, index_col=0)
-        videos = [v[:-4] for v in vdf.video.values]
-    sdf = pd.concat([pd.read_csv(base_path/f'track_data/{video:s}_{suffix:s}.csv') for video in videos])
+        videos = get_all_videos(meta)
+    sdf = pd.concat([pd.read_csv(base_path/f'{video:s}_{suffix:s}.csv') for video in videos])
     if to_save:
-        sdf.to_csv(base_path/f'track_data/{filename:s}.csv', index=False)
+        sdf.to_csv(base_path/f'{filename:s}.csv', index=False)
     return sdf
 

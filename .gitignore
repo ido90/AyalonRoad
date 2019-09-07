@@ -13,3 +13,4 @@ Detector/experiments/
 Detector/tmp/
 Tracker/track_data
 Tracker/tmp
+Analyzer/tmp
