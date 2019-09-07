@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import seaborn as sns
 from collections import Counter, OrderedDict, Sequence
 
 from sklearn.cluster import KMeans
@@ -50,7 +51,8 @@ def load_video_summary(video, base_path=DATA_DIR, **kwargs):
         lanes = pkl.load(f)
     return df, X, Y, S, N, W, H, lanes
 
-def load_data_summary(base_path=DATA_DIR, per_car='summary_per_car', spatial='summary_per_area'):
+def load_data_summary(base_path=DATA_DIR,
+                      per_car='summary_per_car_filtered', spatial='summary_per_area_filtered'):
     df  = pd.read_csv(base_path/f'{per_car:s}.csv')
     sdf = pd.read_csv(base_path/f'{spatial:s}.csv')
     return df, sdf
@@ -59,6 +61,27 @@ def video_filtered_tracks_rate(video, base_path=DATA_DIR):
     df = pd.read_csv(base_path/f'{video:s}.csv')
     df_filtered = t.filter_merged_summary(df, verbose=0)
     return 1-df_filtered.shape[0]/df.shape[0], df_filtered.shape[0], df.shape[0]
+
+def get_cols(df, base_name, return_data=False):
+    base_name += '_'
+    cols = [c for c in df.columns if c[:-2]==base_name]
+    return df[cols] if return_data else cols
+
+# Recommended args for visualize_video():
+# frame0 (int), goal_frame (int),
+# boxes, dots, all_active_tracks, all_detections, show_scores, self_track (int), extra_frames (int),
+# display (int), save_frame (path), save_video (path), title (str), verbose
+def show_car(video, car, crop=True, constraints_level=2, videos_path=Path(r'd:\media\videos\ayalon'), **kwargs):
+    video = video if video.endswith('.mp4') else video + '.mp4'
+    _, X, Y, _, _, _, _, _ = load_video_summary(video[:-4])
+    # import pdb
+    # pdb.set_trace()
+    X = pd.DataFrame(t.m2p_x(X, video), columns=X.columns)
+    Y = pd.DataFrame(t.m2p_y(Y, video), columns=Y.columns)
+    area = t.get_cropped_frame_area(video) if crop else None
+    model = t.get_detector(area, constraints_level=constraints_level, verbose=0)
+    t.visualize_video(model, str(videos_path/video), X, Y, car=str(car), area=area, min_hits=1, **kwargs)
+    del model
 
 
 #################################################
@@ -117,6 +140,82 @@ def plot_lanes(video, frame, ax=None,
         y = t.meters_to_global_pixels_y(y, video)
         ax.plot(x[0], y[0], 'rs')
         ax.plot(x, y, 'r.--', linewidth=1)
+
+def get_lanes_transitions(df, x_ref=X_REF, notebook=False, verbose=0, ax=None, save_to=None):
+    # get lanes
+    lane_cols = get_cols(df, 'lane')
+    lanes = df[lane_cols]
+    # get transitions
+    transitions = lanes.diff(axis=1).iloc[:, 1:]
+    # flatten & count
+    transitions_count = transitions.values.flatten()
+    transitions_count = transitions_count[np.logical_not(np.isnan(transitions_count))]
+    transitions_count = Counter(transitions_count)
+    # print/plot
+    if verbose >= 1:
+        print(transitions_count)
+        if verbose >= 2:
+            ax = plt.gca() if ax is None else ax
+            ax.bar(list(transitions_count.keys()), list(transitions_count.values()))
+            ax.set_yscale('log')
+            ax.grid()
+            ax.set_xlabel('Transitioned lanes over road interval')
+            ax.set_ylabel(f'Count\n(total ~ {len(df)/1e3:.0f}K vehicles X {len(lane_cols):d} intervals)')
+    # count !=0
+    n_transitions = np.sum([transitions_count[tr_size] for tr_size in transitions_count if tr_size != 0])
+    cars_with_transitions = np.where(transitions.any(axis=1, skipna=True))[0]
+    # create dedicated df for transitions
+    transitions_agg = pd.DataFrame(index=list(range(n_transitions)),
+                                   columns=('video', 'car', 'x1', 'x2', 'lane_1', 'lane_2', 'transition'))
+    i = 0
+    for car in (tqdm_notebook(cars_with_transitions) if notebook else cars_with_transitions):
+        car = lanes.index[car]
+        for x1, x2 in zip(x_ref[:-1], x_ref[1:]):
+            if np.logical_not(np.isnan(lanes.loc[car, f'lane_{x1:.0f}'])) and \
+                    np.logical_not(np.isnan(lanes.loc[car, f'lane_{x2:.0f}'])) and \
+                    lanes.loc[car, f'lane_{x1:.0f}'] != lanes.loc[car, f'lane_{x2:.0f}']:
+                transitions_agg.iloc[i, 0] = df.loc[car, 'video']
+                transitions_agg.iloc[i, 1] = df.loc[car, 'car']
+                transitions_agg.iloc[i, 2] = x1
+                transitions_agg.iloc[i, 3] = x2
+                transitions_agg.iloc[i, 4] = lanes.loc[car, f'lane_{x1:.0f}']
+                transitions_agg.iloc[i, 5] = lanes.loc[car, f'lane_{x2:.0f}']
+                transitions_agg.iloc[i, 6] = lanes.loc[car, f'lane_{x2:.0f}'] - lanes.loc[car, f'lane_{x1:.0f}']
+                i += 1
+
+    if save_to is not None:
+        transitions_agg.to_csv(DATA_DIR/f'{save_to:s}.csv', index=False)
+
+    return transitions_agg
+
+def show_transitions(transitions, x_ref=X_REF, K=5, axs=None):
+    lane_transitions_d = transitions[transitions.transition > 0]
+    lane_transitions_u = transitions[transitions.transition < 0]
+    trans_per_cell_d = np.zeros((K, len(x_ref)))
+    trans_per_cell_u = np.zeros((K, len(x_ref)))
+    for i, l in enumerate(range(1, 6)):
+        for j, x0 in enumerate(x_ref):
+            trans_per_cell_d[i, j] = ((lane_transitions_d.x1 == x0) & (lane_transitions_d.lane_1 == l)).sum()
+            trans_per_cell_u[i, j] = ((lane_transitions_u.x1 == x0) & (lane_transitions_u.lane_1 == l)).sum()
+
+    if axs is None:
+        _, axs = plt.subplots(1, 2, figsize=(16, 4))
+
+    ax = axs[0]
+    sns.heatmap(trans_per_cell_d[:, :-1],
+                xticklabels=np.array(x_ref[:-1],dtype=int), yticklabels=1 + np.arange(5), ax=ax)
+    ax.invert_xaxis()
+    ax.set_title('Moving Left (down in the image)')
+    ax.set_xlabel('X [m]')
+    ax.set_ylabel('Lane')
+
+    ax = axs[1]
+    sns.heatmap(trans_per_cell_u[:, :-1],
+                xticklabels=np.array(x_ref[:-1],dtype=int), yticklabels=1 + np.arange(5), ax=ax)
+    ax.invert_xaxis()
+    ax.set_title('Moving Right (up in the image)')
+    ax.set_xlabel('X [m]')
+    ax.set_ylabel('Lane')
 
 
 #################################################

@@ -630,12 +630,12 @@ def read_video_summary(video, base_path=Path('../Tracker/track_data'), filtered=
         N = pkl.load(f)['N']
     return df, X, Y, S, N, W, H
 
-def get_merged_summaries(meta=r'../Photographer/videos_metadata.csv', videos=None):
+def get_merged_summaries(meta=r'../Photographer/videos_metadata.csv', videos=None, base_path=Path('track_data')):
     if videos is None:
         vdf = pd.read_csv(meta, index_col=0)
         videos = [v[:-4] for v in vdf.video.values]
     return pd.concat([
-        pd.read_csv(f'track_data/{video:s}.csv')
+        pd.read_csv(base_path/f'{video:s}.csv')
         for video in videos
     ])
 
