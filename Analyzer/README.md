@@ -63,7 +63,7 @@ The clustering had **several challenges**:
 
 In spite of the challenges, a **simple *K-means* seems to have yielded reasonable results**. The algorithm was **initialized with class-centers corresponding to the quantiles 10,30,50,70,90 of the vehicles vertical locations**.
 
-| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Sanity/Lanes%20clustering%20-%2020190520_105429.png" width="240"> <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Sanity/Lanes%20borders%20-%2020190520_105429.png" width="480"> |
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Sanity/Lanes%20clustering%20-%2020190520_105429.png" width="240"> <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Sanity/Lanes%20borders%20-%2020190520_105429.png" width="540"> |
 | :--: |
 | Clustering of lanes in a video |
 
