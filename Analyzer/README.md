@@ -57,17 +57,15 @@ In order to normalize all the vehicles to consistent and comparable tracks repre
 For every video, for every horizontal location x (out of the 11 constant points described above), the vehicles passing through x were **clustered by their vertical locations into 5 groups representing the 5 lanes of the road**.
 
 The clustering had **several challenges**:
-- The number of vehicles may vary between lanes (especially in short videos).
+- The number of vehicles may vary significantly between lanes.
 - The rightmost lane is wider to the point of allowing 2 adjacent vehicles in its beginning, hence corresponds to a more heterogeneous cluster.
 - High vehicles are sometimes detected higher in the road, i.e. to the right of their lane, which disrupts the distinction between the lanes.
 
-In spite of the challenges, a **simple *K-means* seems to have yielded reasonable results**. The algorithm was **initialized with class-centers corresponding to the quantiles 10,30,50,70,90 of the vehicles vertical locations**.
+In spite of the challenges, a **simple *K-means* seems to have yielded reasonable results**. The algorithm was **initialized with class-centers corresponding to uniform split of the range of the vehicles vertical locations in the video**.
 
 | <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Sanity/Lanes%20clustering%20-%2020190520_105429.png" width="240"> <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Sanity/Lanes%20borders%20-%2020190520_105429.png" width="540"> |
 | :--: |
 | Clustering of lanes in a video |
-
-The approach of equally-slicing the range of the vehicles vertical locations was considered and denied due to its sensitivity to outliers, which may cause significant hard-to-notice inaccuracies.
 
 
 ## Lane transitions
