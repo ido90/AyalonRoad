@@ -762,9 +762,10 @@ def ordered_counter(tokens):
     return OrderedDict(sorted(Counter([tok for grp in tokens for tok in grp]).items(),
                               key=lambda kv: kv[1], reverse=True))
 
-def qplot(x, ax=None, ylab='', logscale=False, assume_sorted=False, showmean=True):
+def qplot(x, ax=None, xlab=None, ylab='', logscale=False, assume_sorted=False, showmean=True):
     if ax is None:
         ax = plt.gca()
+    xlab = 'Quantile [%]' if xlab is None else f'{xlab:s} quantile [%]'
     n_orig = len(x)
     try:
         x = x[x.notnull()]
@@ -776,7 +777,7 @@ def qplot(x, ax=None, ylab='', logscale=False, assume_sorted=False, showmean=Tru
     if showmean:
         ax.axhline(np.mean(x), linestyle=':', color='blue', label='Average')
     ax.plot(list(range(101)), [x[int(q / 100 * (len(x) - 1))] for q in range(101)], 'k.-')
-    ax.set_xlabel('Quantile [%]')
+    ax.set_xlabel(xlab)
     ax.set_ylabel(ylab)
     ax.set_xlim((0, 100))
     ax.set_title(f'Valid values: {len(x):d}/{n_orig:d} ({100*len(x)/n_orig:.1f}%)')

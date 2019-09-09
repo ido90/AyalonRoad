@@ -177,6 +177,15 @@ def qplots(X, quants=np.arange(101), ylab='', tit='', count_nas=True, ax=None,
     ax.grid()
     ax.legend()
 
+def rolling(x0, x, y, T, assume_sorted=False):
+    if not assume_sorted:
+        x, y = zip(*sorted(zip(x, y)))
+        x = np.array(list(x))
+        y = np.array(list(y))
+    wt = [np.exp(-np.abs(xx-x)/T) for xx in x0]
+    y0 = [np.sum(w*y)/np.sum(w) for w in wt]
+    return y0
+
 
 #################################################
 ###########   LANES CLUSTERING
