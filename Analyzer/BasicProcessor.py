@@ -26,9 +26,11 @@ X_REF = np.arange(20,81,6)
 #################################################
 
 # BASIC INTERFACE
+# DATA VISUALIZATION TOOLS
 # LANES CLUSTERING
 # SPATIAL SUMMARY: location-oriented information
 #                  (e.g. what's the speed in a certain lane at a certain road interval)
+# DETECTIONS COUNT
 
 # Note: part of the initial processing (pixels-to-meters conversion, per-car data-frame)
 #       is done in Tracker/Tracker.py due to historical dependencies.
@@ -40,10 +42,11 @@ X_REF = np.arange(20,81,6)
 
 VIDEOS_DIR = Path(r'D:\Media\Videos\Ayalon')
 DATA_DIR = Path('../Tracker/track_data')
+PROBLEMATIC_VIDEOS = ('20190523_104730.mp4', '20190523_144706.mp4', '20190525_202019.mp4')
 
-def get_all_videos(meta=r'../Photographer/videos_metadata.csv'):
+def get_all_videos(meta=r'../Photographer/videos_metadata.csv', exclude=tuple()):
     vdf = pd.read_csv(meta, index_col=0)
-    return [v[:-4] for v in vdf.video.values]
+    return [v[:-4] for v in vdf.video.values if v not in exclude]
 
 def load_video_summary(video, base_path=DATA_DIR, **kwargs):
     df, X, Y, S, N, W, H = t.read_video_summary(video, base_path=base_path, **kwargs)
@@ -57,15 +60,36 @@ def load_data_summary(base_path=DATA_DIR,
     sdf = pd.read_csv(base_path/f'{spatial:s}.csv')
     return df, sdf
 
-def video_filtered_tracks_rate(video, base_path=DATA_DIR):
+def load_lanes(meta=r'../Photographer/videos_metadata.csv', videos=None, base_path=DATA_DIR):
+    if videos is None:
+        videos = get_all_videos(meta)
+    widths = []
+    for video in videos:
+        video = video
+        with open(base_path/f'{video:s}_lanes.pkl', 'rb') as f:
+            lanes = pkl.load(f)
+        widths.extend([np.diff(lanes[x].transpose()) for x in lanes])
+
+    wf = pd.DataFrame({k + 1: [w[0, k] for w in widths] for k in range(4)})
+    wf['x'] = len(videos) * list(lanes.keys())
+    wf['video'] = [v for v in videos for _ in list(lanes.keys())]
+    return wf
+
+def video_get_rate_of_filtered_tracks(video, base_path=DATA_DIR):
     df = pd.read_csv(base_path/f'{video:s}.csv')
     df_filtered = t.filter_merged_summary(df, verbose=0)
     return 1-df_filtered.shape[0]/df.shape[0], df_filtered.shape[0], df.shape[0]
 
-def get_cols(df, base_name, return_data=False):
+def get_cols(df, base_name, return_data=False, spatial=False):
     base_name += '_'
-    cols = [c for c in df.columns if c[:-2]==base_name]
+    n_suffix = 10 if spatial else 2
+    cols = [c for c in df.columns if c[:-n_suffix]==base_name]
     return df[cols] if return_data else cols
+
+
+#################################################
+###########   DATA VISUALIZATION TOOLS
+#################################################
 
 # Useful args for visualize_video():
 # frame0 (int), goal_frame (int),
@@ -83,21 +107,102 @@ def show_car(video, car, crop=True, constraints_level=2, videos_path=Path(r'd:\m
     t.visualize_video(model, str(videos_path/video), X, Y, car=str(car), area=area, min_hits=1, **kwargs)
     del model
 
+def agg_df(df, cols_to_agg, cols_to_keep=None, fac_name='factor', val_name='value', factors=None):
+    if cols_to_keep is None:
+        cols_to_keep = list(set(df.columns)-set(cols_to_agg))
+    if factors is None:
+        factors = cols_to_agg
+    dfs = []
+    for c,fac in zip(cols_to_agg,factors):
+        d = df[cols_to_keep].copy()
+        d[fac_name] = fac
+        d[val_name] = df[c]
+        dfs.append(d)
+    return pd.concat(dfs)
+
+def widen_df(df, value, by, factors=None, cols_to_keep=tuple()):
+    by_vals = np.unique(df[by])
+    factors = by_vals if factors is None else factors
+    ww = df[cols_to_keep]
+    for f,fname in zip(by_vals, factors):
+        ww[fname] = df.loc[df[by]==f,value]
+    return ww
+
+def boxplot(x, y, by=None, xlab='x', ylab='y', flab='factor', tit='', showmeans=True, ax=None, **kwargs):
+    ax = plt.gca() if ax is None else ax
+    df = pd.DataFrame({xlab:x, ylab:y, flab:by})
+    sns.boxplot(data=df, x=xlab, y=ylab, hue=None if by is None else flab, showmeans=showmeans, **kwargs)
+    ax.set_xlabel(xlab)
+    ax.set_ylabel(ylab)
+    ax.set_title(tit)
+    ax.grid()
+
+def qplots(X, quants=np.arange(101), ylab='', tit='', count_nas=True, ax=None,
+           showmeans=True, remove_na_rows=True, logscale=False, assume_sorted=False):
+    quants = np.array(quants)
+    colors = t.get_colors(X.shape[1])
+    if ax is None:
+        ax = plt.gca()
+
+    n_orig = X.shape[0]
+    if remove_na_rows:
+        X = X[X.notnull().all(axis=1)]
+
+    if count_nas:
+        if remove_na_rows:
+            cnt = f'Valid values: {len(X):d}/{n_orig:d} ({100*len(X)/n_orig:.1f}%)'
+        else:
+            cnt = f'(values: {len(X):d})'
+        if tit:
+            tit += f'\n{cnt:s}'
+        else:
+            tit = cnt
+
+    for i,c in enumerate(X.columns):
+        x = X[c]
+        if not remove_na_rows:
+            x = x[x.notnull()]
+        if not assume_sorted:
+            x = np.sort(x)
+        color = colors[i]
+        if showmeans:
+            ax.axhline(np.mean(x), linestyle=':', color=color)
+        ax.plot(quants, x[np.array(quants/100 * (len(x)-1), dtype=int)], '.-', color=color, label=c)
+    ax.set_xlabel('Quantile [%]')
+    ax.set_ylabel(ylab)
+    ax.set_title(tit)
+    ax.set_xlim((quants.min(), quants.max()))
+    if logscale:
+        ax.set_yscale('log')
+    ax.grid()
+    ax.legend()
+
 
 #################################################
 ###########   LANES CLUSTERING
 #################################################
 
-def cluster_lanes(df, x_ref=X_REF, n_lanes=5, show_lanes=None):
+def cluster_lanes(df, x_ref=X_REF, n_lanes=5, init_mode=2, show_lanes=None):
     centers = {}
     for x0 in x_ref:
-        quants = 1 / (2 * n_lanes) + (1 / n_lanes) * np.arange(n_lanes)
-        initial_centers = np.quantile(df[f'y_{x0:.0f}'].dropna(), quants)[:, np.newaxis]
+
+        if init_mode == 1:
+            quants = 1 / (2 * n_lanes) + (1 / n_lanes) * np.arange(n_lanes)
+            initial_centers = np.quantile(df[f'y_{x0:.0f}'].dropna(), quants)[:, np.newaxis]
+        elif init_mode == 2:
+            y1 = df[f'y_{x0:.0f}'].dropna().min()
+            y2 = df[f'y_{x0:.0f}'].dropna().max()
+            dy = (y2-y1)/(2*n_lanes)
+            initial_centers = np.arange(y1+dy,y2,2*dy)[:, np.newaxis]
+        else:
+            raise IOError('init_mode must be either 1 or 2.')
+
         kmeans = KMeans(n_clusters=n_lanes, n_init=1, init=initial_centers)
         kmeans = kmeans.fit(df[f'y_{x0:.0f}'].dropna()[:, np.newaxis])
         cents = kmeans.cluster_centers_
         centers[x0] = cents
         df.loc[df[f'y_{x0:.0f}'].notnull(), f'lane_{x0:.0f}'] = 1 + kmeans.labels_
+        df[f'lane_{x0:.0f}'] = df[f'lane_{x0:.0f}'].astype(float)
 
         if show_lanes is not None and show_lanes[0]==x0:
             # show_lanes = [x_in_which_to_show, ax]
@@ -110,11 +215,13 @@ def cluster_lanes(df, x_ref=X_REF, n_lanes=5, show_lanes=None):
     return centers
 
 def cluster_lanes_for_all_videos(meta=r'../Photographer/videos_metadata.csv', videos=None,
-                                 base_path=DATA_DIR, **kwargs):
+                                 base_path=DATA_DIR, apply_filter=False, **kwargs):
     if videos is None:
         videos = get_all_videos(meta)
     for video in videos:
         df = pd.read_csv(base_path/f'{video:s}.csv', index_col='car')
+        if apply_filter:
+            df = t.filter_merged_summary(df, verbose=0)
         centers = cluster_lanes(df, **kwargs)
         df.to_csv(base_path/f'{video:s}.csv', index_label='car')
         with open(base_path/f'{video:s}_lanes.pkl', 'wb') as f:
@@ -141,10 +248,17 @@ def plot_lanes(video, frame, ax=None,
         ax.plot(x[0], y[0], 'rs')
         ax.plot(x, y, 'r.--', linewidth=1)
 
+def plot_lanes_centers_distribution(exclude=PROBLEMATIC_VIDEOS):
+    wf = load_lanes()
+    wf = wf[~wf.video.isin([v[:-4] for v in exclude])]
+    plt.figure(figsize=(18, 5))
+    waf = agg_df(wf, 1 + np.arange(4), ['x'], 'lane', 'width', [f'{k + 1}-{k + 2}' for k in range(4)])
+    boxplot(waf.x, waf.width, waf.lane, 'x [m]', 'width [m]', 'lane')
+
 def get_lanes_transitions(df, x_ref=X_REF, notebook=False, verbose=0, ax=None, save_to=None):
     # get lanes
     lane_cols = get_cols(df, 'lane')
-    lanes = df[lane_cols]
+    lanes = df[lane_cols].astype(float)
     # get transitions
     transitions = lanes.diff(axis=1).iloc[:, 1:]
     # flatten & count
@@ -309,5 +423,6 @@ def detections_count(meta=r'../Photographer/videos_metadata.csv', videos=None, b
         df.loc[video, 'n_frames'] = len(N)
         df.loc[video, 'n_detections'] = np.sum(N)
         df.loc[video, 'detections_per_frame'] = np.mean(N)
+        df.loc[video, 'n_detections_sd'] = np.std(N)
     return df
 
