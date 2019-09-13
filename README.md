@@ -9,13 +9,18 @@ Since the small, crowded cars in the videos were failed to be detected by severa
 
 Since the low frame-rate could not guarantee intersection between the bounding-boxes of the same vehicle in adjacent frames, I replaced the assignment mechanism of *SORT* tracker with a **location-based probabilistic model implemented through a Kalman filter**.
 
-TODO analysis
+TODO
+The analysis of the traffic (as detected and tracked within the videos) is still in progress.
+Initial manipulations (e.g. lanes clustering) were already applied to generate convenient representation of the data.
+Few initial results (e.g. initial analysis of **lane-transitions**, **patterns over days and time**, and the **fundamental traffic diagram**) are also shown below.
+
+The project is also more compactly summarized in [this presentation](https://github.com/ido90/AyalonRoad/blob/master/Traffic%20Analysis%20in%20Ayalon%20Road.pdf), though it might be less clear for reading by itself.
 
 ### Main contributions
 - **Original dataset of traffic in a major road**
 - **Detection of small, crowded objects in noisy images, trainable from little data**
 - **Tracking of fast-moving objects in low frame-rate videos with robustness to missing detections**
-- TODO analysis contribution
+- TODO analysis
 
 ### Contents
 - [Data gathering](#data-gathering) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/photographer)]
@@ -23,6 +28,7 @@ TODO analysis
 - [Paths tracking](#tracking) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Tracker)]
 - [Traffic analysis](#traffic-analysis) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Analyzer)]
 - [References](#references)
+
 
 ________________________________________
 
@@ -114,6 +120,29 @@ ________________________________________
 ## [Traffic Analysis](https://github.com/ido90/AyalonRoad/blob/master/Analyzer)
 
 TODO
+The analysis of the traffic (as detected and tracked within the videos) is currently still in progress.
+
+Initial manipulations were already applied in order to generate convenient representation of the data, as explained in the table below.
+
+| Structure | Keys | Values | Usage example | Preliminary processing | Source code |
+| --- | --- | --- | --- | --- | --- |
+| **Raw tracking logs** | time, vehicle | x, y | Get all detected locations of a vehicle in a video | [Pixels-to-meters transformation](https://github.com/ido90/AyalonRoad/tree/master/Analyzer#pixels-to-meters-transformation) | Tracker/Tracker.py |
+| **Per-vehicle** | vehicle, road-interval | time, y, speed, etc. | Get speed distribution per some group of videos | [Interpolation to grid points](https://github.com/ido90/AyalonRoad/tree/master/Analyzer#interpolation-to-grid-points) | Tracker/Tracker.py |
+| **Spatial** | time, lane, road-interval | number of vehicles, speed | Get speed distribution per lane | [Clustering to lanes](https://github.com/ido90/AyalonRoad/tree/master/Analyzer#lanes-clustering) | Analyzer/BasicProcessor.py |
+
+In addition, the following initial figures were extracted from the data:
+
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Lane%20transitions/Lane%20transitions%20count.png" width="640"> |
+| :--: |
+| Count of detected lane transitions per lane and road-interval (50% of the detected transitions are estimated to be false-positives) |
+
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Videos%20buckets/Traffic%20density%20day-time%20map.png" width="320"> <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Videos%20buckets/Traffic%20density.png" width="320"> |
+| :--: |
+| Density of traffic over days and hours |
+
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Videos%20buckets/Speed%20vs%20density.png" width="480"> |
+| :--: |
+| The linear relationship between traffic speed and density, which is known as part of the [fundamental traffic diagram](https://en.wikipedia.org/wiki/Fundamental_diagram_of_traffic_flow); the maximum flux is accordingly somewhere in the middle |
 
 
 ________________________________________
