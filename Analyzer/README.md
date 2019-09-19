@@ -159,7 +159,7 @@ One may ask whether the currently fastest lane is expected to be accordingly fas
     - Regularization (ridge/lasso) does not seem helpful.
     - **Most of the speed-difference between adjacent lanes under congestion diminishes within 50 meters**: the optimal betas express correction of ~30% towards the neighbors-speeds, and since it occurs for both neighbors - most of the speed-difference diminishes.
 
-| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Predicting%20models/Speed%20change%20vs%20other%20lanes%20speeds%20png" width="360"> |
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Predicting%20models/Speed%20change%20vs%20other%20lanes%20speeds.png" width="360"> |
 | :--: |
 | Coefficients of the model of future speed-change as function of the current speed-differences-between-lanes |
 
