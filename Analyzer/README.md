@@ -195,3 +195,15 @@ Fast vehicles sometimes move left on lefter lanes as well.
 | Changes in traffic speed following lane transitions; the lowerfigures refer to the target lane |
 
 ### Extreme events
+
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Anecdotes/slowest_car_1943pm_3.9kmh.png" width="640"> |
+| :--: |
+| Slowest vehicle: 3.9 km/h; videos of both slowest and fastest (143km/h) vehicles are available under `Outputs/Analysis/Anecdotes` |
+
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Anecdotes/Dense_road_6pm.png" width="640"> <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Anecdotes/Sparse_road_11pm.png" width="640"> |
+| :--: |
+| Most and least dense frames: 51 and 2 detected vehicles respectively |
+
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Anecdotes/Left_lane_congestion_9am.png" width="640"> |
+| :--: |
+| Unclear congestion on the leftmost lane |
