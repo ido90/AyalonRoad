@@ -9,10 +9,7 @@ Since the small, crowded cars in the videos were failed to be detected by severa
 
 Since the low frame-rate could not guarantee intersection between the bounding-boxes of the same vehicle in adjacent frames, I replaced the assignment mechanism of *SORT* tracker with a **location-based probabilistic model implemented through a Kalman filter**.
 
-TODO
-The analysis of the traffic (as detected and tracked within the videos) is still in progress.
-Initial manipulations (e.g. lanes clustering) were already applied to generate convenient representation of the data.
-Few initial results (e.g. initial analysis of **lane-transitions**, **patterns over days and time**, and the **fundamental traffic diagram**) are also shown below.
+The resulted traffic data were **transformed from pixels to meters units** and organized in both spatial and vehicle-oriented structures. Several research questions were addressed, e.g. regarding the relations between speed/density/flux (the ***fundamental traffic diagram***), daily and temporal patterns and the effects of **lane-transitions**.
 
 The project is also more compactly summarized in [this presentation](https://github.com/ido90/AyalonRoad/blob/master/Traffic%20Analysis%20in%20Ayalon%20Road.pdf), though it might be less clear for reading by itself.
 
@@ -20,7 +17,7 @@ The project is also more compactly summarized in [this presentation](https://git
 - **Original dataset of traffic in a major road**
 - **Detection of small, crowded objects in noisy images, trainable from little data**
 - **Tracking of fast-moving objects in low frame-rate videos with robustness to missing detections**
-- TODO analysis
+- **Detection of critical speed for flux-maximization (60km/h) and initial understanding of the effects of lane-transitions.**
 
 ### Contents
 - [Data gathering](#data-gathering) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/photographer)]
@@ -128,12 +125,11 @@ The traffic data were first manipulated into a convenient representation as desc
 | **Per-vehicle** | vehicle, road-interval | time, y, speed, etc. | Get speed distribution per some group of videos | [Interpolation to grid points](https://github.com/ido90/AyalonRoad/tree/master/Analyzer#interpolation-to-grid-points) | Tracker/Tracker.py |
 | **Spatial** | time, lane, road-interval | number of vehicles, speed | Get speed distribution per lane | [Clustering to lanes](https://github.com/ido90/AyalonRoad/tree/master/Analyzer#lanes-clustering) | Analyzer/BasicProcessor.py |
 
-| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Sanity/car%20size%20vs%20x%20position%20-%20pixels%20vs%20meters%20-%2020190625_104635.png" width="540"> |
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Sanity/car%20size%20vs%20x%20position%20-%20pixels%20vs%20meters%20-%2020190625_104635.png" width="640"> |
 | :--: |
-| The **pixels-to-meters transformation** successfully fixed most of the distortion between close and far locations wrt the camera,
-as indicated (for example) by the distribution of detected vehicles sizes in various intervals of the road |
+| The **pixels-to-meters transformation** successfully fixed most of the distortion between close and far locations wrt the camera, as indicated (for example) by the distribution of detected vehicles sizes in various intervals of the road |
 
-| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Sanity/Lanes%20clustering%20-%2020190520_105429.png" width="240"> <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Sanity/Lanes%20borders%20-%2020190520_105429.png" width="540"> |
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Sanity/Lanes%20clustering%20-%2020190520_105429.png" width="210"> <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Sanity/Lanes%20borders%20-%2020190520_105429.png" width="480"> |
 | :--: |
 | Clustering of lanes in a video |
 
