@@ -192,7 +192,7 @@ Fast vehicles sometimes move left on lefter lanes as well.
 
 | <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Lane%20transitions/Transitions%20externalities.png" width="640"> <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Lane%20transitions/Transitions%20externalities%20-%20target%20lane%20-%20noisy.png" width="320"> <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Lane%20transitions/Transitions%20externalities%20-%20target%20lane%20-%20boxplot.png" width="320"> |
 | :--: |
-| Changes in traffic speed following lane transitions; the lowerfigures refer to the target lane |
+| Changes in traffic speed following lane transitions; the lower figures refer to the target lane |
 
 ### Extreme events
 
