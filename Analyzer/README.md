@@ -93,6 +93,11 @@ _________________________
 ### The *Fundamental Traffic Diagram*
 
 - The **distributions of traffic speed & density look reasonable**, and in particular have larger variance between videos than within videos.
+
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/General%20stats/Speed%20per%20car.png" width="280"> <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/General%20stats/Speed%20per%20video.png" width="540"> |
+| :--: |
+| Distribution of vehicles speed over the whole data |
+
 - Density trends over days and hours are very similar to what could be expected (**rush hours around 16-17 on buisiness days, 12-13 on Fridays (before Shabbath) and 19-20 on Saturdays (after Shabbath)**).
     - No heavy traffic was observed in the morning, probably either because the road interval is not a major one for entering Tel-Aviv (it's beyond *Hashalom* interchange) or because the earliest videos are after 8:30am.
     
@@ -150,7 +155,7 @@ One may ask whether the currently fastest lane is expected to be accordingly fas
     - Only 3K out of the remaining 74K videos-frames had available recorded speeds in all the lanes (up to few frames before/after).
 - For each lane, its future speed was predicted as follows:
     - **Output** (1 per lane) - speed change within lane: `speed(lane l, end of frame, t+dt) - speed(lane l, beginning of frame, t)` (where `dt` is the estimated average time required to cross the frame).
-    - **Input** (4 per output) - relative speed in other lanes: `speed(lane l', beginning of frame, t) - speed(lane l, beginning of frame, t)` for each `l`!=l`.
+    - **Input** (4 per output) - relative speed in other lanes: `speed(lane l', beginning of frame, t) - speed(lane l, beginning of frame, t)` for each `l'!=l`.
 - Note that the model is **memoryless**, and in particular does not include:
     - Earlier speeds of the same vehicles - which are unavailable in the data since they "happened" earlier in the road.
     - Earlier speeds in the same location - since earlier the drivers were behind, and couldn't know these speeds, thus they can't support decision making of the drivers.
