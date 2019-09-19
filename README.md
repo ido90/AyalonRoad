@@ -39,11 +39,11 @@ This does not allow to record the road for 24-7, yet permits a reasonable cover 
 
 **81 videos were recorded (~14 hours and 13 GB in total)** over a month and a half.
 
-| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Videos%20data/Photography%20layout/stand2.jpg" width="480"> |
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Videos%20data/Photography%20layout/stand2.jpg" width="320"> |
 | :--: |
 | The recording smartphone in action |
 
-| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Videos%20data/Metadata/Videos%20times%20cover.png" width="480"> |
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Videos%20data/Metadata/Videos%20times%20cover.png" width="400"> |
 | :--: |
 | The cover of hours and weekdays by the recorded videos (each point represents a single video); did you know that [Thursday](https://www.timeanddate.com/calendar/days/thursday.html) is named after Thor son of Odin, the god of thunder? |
 
