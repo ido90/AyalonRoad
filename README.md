@@ -26,6 +26,7 @@ The project is also more compactly summarized in [this presentation](https://git
 - [Data gathering](#data-gathering) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/photographer)]
 - [Vehicles detection](#vehicles-detection) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Detector)]
 - [Paths tracking](#tracking) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Tracker)]
+- [Traffic data representation](#traffic-data-representation) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Analyzer)]
 - [Traffic analysis](#traffic-analysis) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Analyzer)]
 - [References](#references)
 
@@ -117,12 +118,9 @@ The final tracking algorithm can process 1.2 full frames or 3 cropped frames per
 
 ________________________________________
 
-## [Traffic Analysis](https://github.com/ido90/AyalonRoad/blob/master/Analyzer)
+## [Traffic Data Representation](https://github.com/ido90/AyalonRoad/blob/master/Analyzer)
 
-TODO
-The analysis of the traffic (as detected and tracked within the videos) is currently still in progress.
-
-Initial manipulations were already applied in order to generate convenient representation of the data, as explained in the table below.
+The traffic data were first manipulated into a convenient representation as described in the table below.
 
 | Structure | Keys | Values | Usage example | Preliminary processing | Source code |
 | --- | --- | --- | --- | --- | --- |
@@ -130,19 +128,65 @@ Initial manipulations were already applied in order to generate convenient repre
 | **Per-vehicle** | vehicle, road-interval | time, y, speed, etc. | Get speed distribution per some group of videos | [Interpolation to grid points](https://github.com/ido90/AyalonRoad/tree/master/Analyzer#interpolation-to-grid-points) | Tracker/Tracker.py |
 | **Spatial** | time, lane, road-interval | number of vehicles, speed | Get speed distribution per lane | [Clustering to lanes](https://github.com/ido90/AyalonRoad/tree/master/Analyzer#lanes-clustering) | Analyzer/BasicProcessor.py |
 
-In addition, the following initial figures were extracted from the data:
-
-| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Lane%20transitions/Lane%20transitions%20count.png" width="640"> |
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Sanity/car%20size%20vs%20x%20position%20-%20pixels%20vs%20meters%20-%2020190625_104635.png" width="540"> |
 | :--: |
-| Count of detected lane transitions per lane and road-interval (50% of the detected transitions are estimated to be false-positives) |
+| The **pixels-to-meters transformation** successfully fixed most of the distortion between close and far locations wrt the camera,
+as indicated (for example) by the distribution of detected vehicles sizes in various intervals of the road |
 
-| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Videos%20buckets/Traffic%20density%20day-time%20map.png" width="320"> <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Videos%20buckets/Traffic%20density.png" width="320"> |
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Sanity/Lanes%20clustering%20-%2020190520_105429.png" width="240"> <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Sanity/Lanes%20borders%20-%2020190520_105429.png" width="540"> |
 | :--: |
-| Density of traffic over days and hours |
+| Clustering of lanes in a video |
 
-| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Videos%20buckets/Speed%20vs%20density.png" width="480"> |
+
+________________________________________
+
+## [Traffic Analysis](https://github.com/ido90/AyalonRoad/blob/master/Analyzer)
+
+Various research questions were studied on basis of the data, as summarized in the figures below.
+
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Videos%20buckets/Traffic%20density.png" width="320"> |
 | :--: |
-| The linear relationship between traffic speed and density, which is known as part of the [fundamental traffic diagram](https://en.wikipedia.org/wiki/Fundamental_diagram_of_traffic_flow); the maximum flux is accordingly somewhere in the middle |
+| Traffic density over days and hours: **rush hours** are around 16-17 on buisiness days, 12-13 on Fridays (before Shabbath) and 19-20 on Saturdays (after Shabbath) |
+
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Videos%20buckets/Fundamental%20Traffic%20Diagram.png" width="640"> |
+| :--: |
+| The [***fundamental traffic diagram***](https://en.wikipedia.org/wiki/Fundamental_diagram_of_traffic_flow) is very similar to the theory; flux-vs-density diagram shows **clear separation between free-flow traffic and congestion**; **maximum-flux speed (*critical speed*) is around 60 km/h** |
+
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Temporal%20patterns/Speed%20trends%20within%20videos.png" width="540"> |
+| :--: |
+| The traffic speed within a video is usually quite stable, compared to the differences between videos |
+
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Spatial%20buckets/Speed%20per%20lane%20and%20density.png" width="320"> |
+| :--: |
+| Traffic is **faster on the left lanes**, with more significant difference as the density decreases closer to free-flow |
+
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Predicting%20models/Speed%20change%20vs%20other%20lanes%20speeds.png" width="360"> |
+| :--: |
+| "My future speed-change" (measured as the speed on my lane ~4 seconds and ~50 meters later, relatively to my current speed) as a model of the current speeds on adjacent lanes, relatively to mine, under congestion videos (`density > 0.3 vehicles/10m`); in particular, if the adjacent lanes are currently faster, then my own speed is expected to move towards them, **diminishing on average more than 50% of the speed-differences within as short range as 50 meters**; the model explains 18% (out-of-sample) of the speed-changes |
+
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Lane%20transitions/Lane%20transitions%20count.png" width="540"> <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Lane%20transitions/Lane%20transitions%20count%20by%20relative%20speed.png" width="540"> |
+| :--: |
+| Detected lane transitions per lane and road-interval (upper figures), and per lane and relative speed (lower figure); **most of the lane transitions occur on the right lanes and on low speed**, although there are many transitions of fast vehicles on the left as well; note that 50% of the detected transitions are estimated to be false-positives |
+
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Lane%20transitions/Lane%20transitions%20self%20value.png" width="540"> |
+| :--: |
+| Lane transition of a vehicle is usually followed by significant and immediate speed increase of that vehicle |
+
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Lane%20transitions/Transitions%20externalities.png" width="640"> <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Lane%20transitions/Transitions%20externalities%20-%20target%20lane%20-%20noisy.png" width="320"> <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Lane%20transitions/Transitions%20externalities%20-%20target%20lane%20-%20boxplot.png" width="320"> |
+| :--: |
+| Changes in surrounding-traffic speed following lane transitions (the lower figures refer to the target lane); the data look **too noisy to study lane transitions externalities** - due to noise in probably both the traffic itself and the measuring process |
+
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Anecdotes/slowest_car_1943pm_3.9kmh.png" width="540"> |
+| :--: |
+| Slowest vehicle: 3.9 km/h; videos of both slowest and fastest (143km/h) vehicles are available under `Outputs/Analysis/Anecdotes` |
+
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Anecdotes/Dense_road_6pm.png" width="540"> <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Anecdotes/Sparse_road_11pm.png" width="540"> |
+| :--: |
+| Most and least dense frames: 51 and 2 detected vehicles respectively |
+
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Anecdotes/Left_lane_congestion_9am.png" width="540"> |
+| :--: |
+| Unclear congestion on the leftmost lane |
 
 
 ________________________________________
@@ -153,3 +197,4 @@ ________________________________________
 - [Object detection and tracking in PyTorch](https://towardsdatascience.com/object-detection-and-tracking-in-pytorch-b3cf1a696a98) / Chris Fotache
 - [Simple Online and Realtime Tracking](https://arxiv.org/abs/1602.00763) / Alex Bewley et al.
 - [Kalman Filter](https://en.wikipedia.org/wiki/Kalman_filter) / Wikipedia
+- [Fundamental traffic diagram](https://en.wikipedia.org/wiki/Fundamental_diagram_of_traffic_flow) / Wikipedia
