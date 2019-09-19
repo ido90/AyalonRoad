@@ -65,7 +65,7 @@ def load_data_summary(base_path=DATA_DIR, enrich=True,
             df[f'v_x{x1:d}to{x2:d}'] = \
                 np.sqrt(np.power(x2 - x1, 2) + np.power(df[f'y_{x2:d}'] - df[f'y_{x1:d}'], 2)) / \
                 (df[f't_{x2:d}'] - df[f't_{x1:d}'])
-        df['v_std'] = df.iloc[:, -(X_REF-1):].std(axis=1)
+        df['v_std'] = df.iloc[:, -(len(X_REF)-1):].std(axis=1)
     return df, sdf
 
 def load_lanes(meta=r'../Photographer/videos_metadata.csv', videos=None, base_path=DATA_DIR):
