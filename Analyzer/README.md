@@ -94,7 +94,7 @@ _________________________
 
 - The **distributions of traffic speed & density look reasonable**, and in particular have larger variance between videos than within videos.
 
-| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/General%20stats/Speed%20per%20car.png" width="280"> <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/General%20stats/Speed%20per%20video.png" width="540"> |
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/General%20stats/Speed%20per%20car.png" width="240"> <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/General%20stats/Speed%20per%20video.png" width="640"> |
 | :--: |
 | Distribution of vehicles speed over the whole data |
 
