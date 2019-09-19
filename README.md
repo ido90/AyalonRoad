@@ -144,7 +144,7 @@ Various research questions were studied on basis of the data, as summarized in t
 | :--: |
 | Traffic density over days and hours: **rush hours** are around 16-17 on buisiness days, 12-13 on Fridays (before Shabbath) and 19-20 on Saturdays (after Shabbath) |
 
-| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Videos%20buckets/Fundamental%20Traffic%20Diagram.png" width="640"> |
+| <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Videos%20buckets/Fundamental%20diagram%20vs%20reference.jpg" width="400"> |
 | :--: |
 | The [***fundamental traffic diagram***](https://en.wikipedia.org/wiki/Fundamental_diagram_of_traffic_flow) is very similar to the theory; flux-vs-density diagram shows **clear separation between free-flow traffic and congestion**; **maximum-flux speed (*critical speed*) is around 60 km/h** |
 
