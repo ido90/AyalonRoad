@@ -98,7 +98,7 @@ _________________________
 | :--: |
 | Distribution of vehicles speed over the whole data |
 
-- Density trends over days and hours are very similar to what could be expected (**rush hours around 16-17 on buisiness days, 12-13 on Fridays (before Shabbath) and 19-20 on Saturdays (after Shabbath)**).
+- Density trends over days and hours are very similar to what could be expected (**rush hours around 16-17 on business days, 12-13 on Fridays (before Shabbath) and 19-20 on Saturdays (after Shabbath)**).
     - No heavy traffic was observed in the morning, probably either because the road interval is not a major one for entering Tel-Aviv (it's beyond *Hashalom* interchange) or because the earliest videos are after 8:30am.
     
 | <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Videos%20buckets/Traffic%20density.png" width="360"> |
