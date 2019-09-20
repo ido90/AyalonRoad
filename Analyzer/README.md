@@ -111,10 +111,10 @@ _________________________
 | :--: |
 | `Flux = speed x density` holds well up to detected vehicles which failed to be consistently-tracked over the observed road interval |
 
-- The [***Fundamental Traffic Diagram***](https://en.wikipedia.org/wiki/Fundamental_diagram_of_traffic_flow) - i.e. the relations between speed, density and flux - looks very similar to the theoretic one drawn by Ammoser et al. In particular:
+- The [***Fundamental Traffic Diagram***](https://en.wikipedia.org/wiki/Fundamental_diagram_of_traffic_flow) - i.e. the relations between speed, density and flux - looks very similar to the theoretic one drawn by Hendrik Ammoser. In particular:
     - The speed is quite linear in density.
     - The flux-vs-density diagram shows clear separation between free-flow traffic and congestion.
-    - **The maximum-flux speed is around 60 km/h**, which is slightly smaller than the typical *critical velocity* of Ammoser et al.
+    - **The maximum-flux speed is around 60 km/h**, which is slightly smaller than the typical *critical velocity* according to Ammoser.
     - There is a single major outlier to the flux-vs-density diagram from 25/5/19, where there was a single dense lane on the right. The flux was small in both the right (very slow) lane and the left (quite empty) lanes, whereas the average density was neither small nor large, deviating from the diagram. This video looks quite fascinating and its dynamics can be further studied in future.
 
 | <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Videos%20buckets/Fundamental%20Traffic%20Diagram.png" width="640"> |
