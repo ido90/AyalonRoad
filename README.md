@@ -146,7 +146,7 @@ Various research questions were studied on basis of the data, as summarized in t
 
 | <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Videos%20buckets/Fundamental%20diagram%20vs%20reference.jpg" width="360"> |
 | :--: |
-| The [***fundamental traffic diagram***](https://en.wikipedia.org/wiki/Fundamental_diagram_of_traffic_flow) is **very similar to the theory** (points are from the data, background and notes are of Ammoser et al.); flux-vs-density diagram shows **clear separation between free-flow traffic and congestion**; **maximum-flux speed (*critical speed*) is around 60 km/h** |
+| The [***fundamental traffic diagram***](https://en.wikipedia.org/wiki/Fundamental_diagram_of_traffic_flow) is **very similar to the theory** (points are from the data, background and notes are of Hendrik Ammoser); flux-vs-density diagram shows **clear separation between free-flow traffic and congestion**; **maximum-flux speed (*critical speed*) is around 60 km/h** |
 
 | <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Temporal%20patterns/Speed%20trends%20within%20videos.png" width="540"> |
 | :--: |
