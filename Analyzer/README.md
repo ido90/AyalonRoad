@@ -115,7 +115,7 @@ _________________________
     - The speed is quite linear in density.
     - The flux-vs-density diagram shows clear separation between free-flow traffic and congestion.
     - **The maximum-flux speed is around 60 km/h**, which is slightly smaller than the typical *critical velocity* of Ammoser et al.
-    - There is a single major outlier to the flux-vs-density diagram from 25/5/19, where there was a single dense lane on the right (thus constant large density), and free-flow on the left (thus large flux). This video looks quite fascinating and its dynamics can be further studied in future.
+    - There is a single major outlier to the flux-vs-density diagram from 25/5/19, where there was a single dense lane on the right. The flux was small in both the right (very slow) lane and the left (quite empty) lanes, whereas the average density was neither small nor large, deviating from the diagram. This video looks quite fascinating and its dynamics can be further studied in future.
 
 | <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Videos%20buckets/Fundamental%20Traffic%20Diagram.png" width="640"> |
 | :--: |
