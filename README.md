@@ -142,7 +142,7 @@ Various research questions were studied on basis of the data, as summarized in t
 
 | <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Videos%20buckets/Traffic%20density.png" width="320"> |
 | :--: |
-| Traffic density over days and hours: **rush hours** are around 16-17 on buisiness days, 12-13 on Fridays (before Shabbath) and 19-20 on Saturdays (after Shabbath) |
+| Traffic density over days and hours: **rush hours** are around 16-17 on business days, 12-13 on Fridays (before Shabbath) and 19-20 on Saturdays (after Shabbath) |
 
 | <img src="https://github.com/ido90/AyalonRoad/blob/master/Outputs/Analysis/Videos%20buckets/Fundamental%20diagram%20vs%20reference.jpg" width="360"> |
 | :--: |
