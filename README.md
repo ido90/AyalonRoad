@@ -17,7 +17,7 @@ The project is also more compactly summarized in [this presentation](https://git
 - **Original dataset of traffic in a major road**
 - **Detection of small, crowded objects in noisy images, trainable from little data**
 - **Tracking of fast-moving objects in low frame-rate videos with robustness to missing detections**
-- **Detection of critical speed for flux-maximization (60km/h) and initial understanding of the effects of lane-transitions.**
+- **Validation of the *fundamental traffic diagram*, detection of critical speed for flux-maximization (60km/h) and initial understanding of the effects of lane-transitions.**
 
 ### Contents
 - [Data gathering](#data-gathering) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/photographer)]
