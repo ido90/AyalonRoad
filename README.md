@@ -1,5 +1,16 @@
 # Traffic Analysis in Original Video Data of Ayalon Road
 
+### Contents
+- [Abstract](#abstract)
+- [Data gathering](#data-gathering) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/photographer)]
+- [Vehicles detection](#vehicles-detection) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Detector)]
+- [Paths tracking](#tracking) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Tracker)]
+- [Traffic data representation](#traffic-data-representation) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Analyzer)]
+- [Traffic analysis](#traffic-analysis) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Analyzer)]
+- [References](#references)
+
+## Abstract
+
 This repository tells the tale of **81 8-minute-long videos recording the traffic in *Ayalon Road*** over a month and a half, as observed from the window in the appartment where I lived in 2019.
 My quest items included a laptop, a smartphone camera and a vacuum mobile holder for car.
 
@@ -21,14 +32,6 @@ The project is also more compactly summarized in [this presentation](https://git
 - **Detection of small, crowded objects in noisy images, trainable from little data**
 - **Tracking of fast-moving objects in low frame-rate videos with robustness to missing detections**
 - **Validation of the *fundamental traffic diagram*, detection of critical speed for flux-maximization (60km/h) and initial understanding of the effects of lane-transitions**
-
-### Contents
-- [Data gathering](#data-gathering) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/photographer)]
-- [Vehicles detection](#vehicles-detection) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Detector)]
-- [Paths tracking](#tracking) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Tracker)]
-- [Traffic data representation](#traffic-data-representation) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Analyzer)]
-- [Traffic analysis](#traffic-analysis) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/Analyzer)]
-- [References](#references)
 
 
 ________________________________________
