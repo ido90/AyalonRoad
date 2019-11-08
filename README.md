@@ -1,5 +1,7 @@
 # Traffic Analysis in Original Video Data of Ayalon Road
 
+For more projects, articles and courses summaries please visit [my website](https://idogreenberg.neocities.org/).
+
 ## Contents
 - [Abstract](#abstract)
 - [Data gathering](#data-gathering) [[detailed](https://github.com/ido90/AyalonRoad/blob/master/photographer)]
